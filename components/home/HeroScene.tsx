@@ -3065,7 +3065,20 @@ function Rig({
   const size = useThree((st) => st.size);
   const camera = useThree((st) => st.camera) as THREE.PerspectiveCamera;
   useEffect(() => {
-    camera.setViewOffset(size.width * 1.34, size.height, 0, 0, size.width, size.height);
+    // Two things move together with the viewport, and they have to.
+    //
+    // The offset exists to clear the left column for the copy — but below
+    // the lg breakpoint the copy sits *over* the scene rather than beside
+    // it, so pushing the subject right just shoves it off a narrow screen.
+    // Under 768 there is no offset at all and the truck is centred.
+    //
+    // FOV widens as the viewport narrows for the same reason a phone camera
+    // has a wider lens than a cinema one: the frame is short, and a 38-degree
+    // vertical on a portrait panel crops the truck at both ends.
+    const narrow = size.width < 768;
+    const shift = narrow ? 1 : size.width < 1024 ? 1.16 : 1.34;
+    camera.fov = narrow ? 52 : size.width < 1024 ? 45 : 38;
+    camera.setViewOffset(size.width * shift, size.height, 0, 0, size.width, size.height);
     camera.updateProjectionMatrix();
     return () => {
       camera.clearViewOffset();
@@ -3323,7 +3336,16 @@ export default function HeroScene({
       // Native device resolution, capped at 2 — past that the cost is real
       // and the gain is not. PCF rather than PCFSoft: golden-hour sun throws
       // a hard edge, and a softened one reads as low resolution.
-      dpr={Math.min(typeof window === "undefined" ? 1 : window.devicePixelRatio, 2)}
+      // 1.5 on phones. A 3x phone panel at dpr 2 is rendering four times the
+      // pixels of dpr 1 for a difference nobody holds the device close
+      // enough to resolve, and fragment cost is where a mobile GPU runs out.
+      dpr={Math.min(
+        typeof window === "undefined" ? 1 : window.devicePixelRatio,
+        quality === "high" ? 2 : 1.5,
+      )}
+      // Shadows off on mobile, not merely lower-resolution: the map is a
+      // whole extra scene render every frame, and halving its size halves
+      // nothing about that.
       shadows={quality === "high" ? "percentage" : false}
       gl={{ antialias: true, powerPreference: "high-performance" }}
       camera={{ fov: 38, near: 0.5, far: 400, position: SHOTS[0].pos }}

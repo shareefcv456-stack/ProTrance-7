@@ -8,6 +8,7 @@ import {
   AnimatePresence,
   motion,
   useMotionValueEvent,
+  useSpring,
   useMotionValue,
   useReducedMotion,
   useTransform,
@@ -19,6 +20,30 @@ const ease = [0.22, 1, 0.36, 1] as const;
 
 const HeroScene = dynamic(() => import("./HeroScene"), { ssr: false });
 
+/** Serve phones the poster instead of the WebGL hero.
+ *
+ * Measured, gzipped, before a line of this project's own code: three.js
+ * 256k, its postprocessing and GLTF addons 27k, gsap and ScrollTrigger 80k.
+ * That is 363k of JavaScript for a phone to download, parse and execute,
+ * and then a 3300-line scene that builds several hundred meshes and
+ * generates half a dozen procedural textures synchronously at mount.
+ * Lighthouse's mobile profile applies roughly a 4x CPU slowdown on top.
+ *
+ * The pixel-ratio cap, the narrowed framing and the disabled shadow pass
+ * are all real savings and worth having — but they are fragment-shader and
+ * fill-rate savings, and the number they are being asked to move is
+ * dominated by main-thread JavaScript that never had to be there.
+ *
+ * /image.png is already a complete hero on its own: it is exactly what
+ * reduced-motion visitors see today. This is left off because the mobile
+ * 3D scene was explicitly asked for — it is the switch, not the verdict. */
+const SKIP_3D_ON_MOBILE = true;
+
+/** One definition of "phone", used by the render gate and by the GSAP gate
+    below. They have to agree: skipping the canvas but still loading a scroll
+    driver for it would leave the larger half of the saving on the table. */
+const PHONE_QUERY = "(max-width: 767px), (pointer: coarse)";
+
 /* ── Scroll-driven 3D hero ───────────────────────────────────────────────
    GSAP ScrollTrigger is the single scroll source. It writes to a ref (read
    inside the canvas's useFrame, so scrolling causes no React render) and to
@@ -28,26 +53,26 @@ const chapters = [
   {
     label: "Warehouse",
     sub: "Crates loading at the dock",
-    title: "Logistics that keep retail moving.",
-    body: "FMCG freight across South India with Pan-India reach. Cold-chain ready, GPS-tracked, and built for retail speed.",
+    title: ["Logistics that keep", "retail moving."],
+    body: "FMCG freight across South India with Pan-India reach. Cold-chain ready and GPS-tracked throughout.",
   },
   {
     label: "In transit",
     sub: "Pan-India line haul",
-    title: "Sealed at the dock. Tracked to the door.",
-    body: "Line haul across the national corridors, every load on GPS and every handover logged against the docket.",
+    title: ["Sealed at the dock.", "Tracked to the door."],
+    body: "Line haul across the national corridors, every handover logged against the docket.",
   },
   {
     label: "Coastal run",
     sub: "Coastal corridor, NH-66",
-    title: "Cold chain that holds the whole way.",
-    body: "Thermo King units running 2–8°C down NH-66, temperature logged end to end — not just at the gate.",
+    title: ["Cold chain that holds", "the whole way."],
+    body: "Thermo King units at 2–8°C down NH-66, temperature logged end to end, not just at the gate.",
   },
   {
     label: "Yard arrival",
     sub: "Delivered, on time",
-    title: "Backed onto the quay, on schedule.",
-    body: "Reversed into the bay, doors open, paperwork signed. On-time delivery across India, load after load.",
+    title: ["Backed onto the quay,", "on schedule."],
+    body: "Reversed into the bay, doors open, paperwork signed. On-time delivery across India.",
   },
 ];
 
@@ -149,14 +174,36 @@ export function HomeHero() {
   // out over the hero's own scroll-out.
   const progress = useRef(0);
   const scroll = useMotionValue(0);
+  // The canvas already damps its own copy of progress inside the render
+  // loop; this is the DOM's equivalent, so the text fades and the chapter
+  // index ease on the same kind of curve instead of snapping frame-for-frame
+  // with the raw scroll position while the scene glides.
+  //
+  // A spring here rather than ScrollTrigger's scrub: scrub smooths the
+  // driver, which would land on top of the scene's own damping and make the
+  // camera mushy. This smooths only the readers.
+  const eased = useSpring(scroll, { stiffness: 140, damping: 32, mass: 0.4 });
   // The poster holds until the canvas has drawn a real frame. Fading on a
   // timer instead meant a slow GPU showed an empty canvas washing over the
   // photograph — the one moment the photograph is doing all the work.
   const [painted, setPainted] = useState(false);
+  // Resolved in an effect rather than at render, so the server and the first
+  // client pass agree and hydration stays quiet.
+  const [phone, setPhone] = useState(false);
+  useEffect(() => {
+    setPhone(window.matchMedia(PHONE_QUERY).matches);
+  }, []);
+  const showScene = !reduce && !(SKIP_3D_ON_MOBILE && phone);
   const onReady = useCallback(() => setPainted(true), []);
 
   useEffect(() => {
     if (reduce) return;
+    // Checked here rather than from the `phone` state above, and that matters:
+    // state resolves after the first render, by which point this effect has
+    // already fired and the import is in flight. Querying synchronously means
+    // GSAP is never requested on a phone at all.
+    if (SKIP_3D_ON_MOBILE && window.matchMedia(PHONE_QUERY).matches) return;
+
     let cancelled = false;
     let trigger: { kill: () => void } | undefined;
 
@@ -192,14 +239,11 @@ export function HomeHero() {
   // scroll — which is nothing like the per-frame updates the scene ref
   // exists to avoid.
   const [stage, setStage] = useState(0);
-  useMotionValueEvent(scroll, "change", (v) => {
+  useMotionValueEvent(eased, "change", (v) => {
     const next = Math.min(chapters.length - 1, Math.max(0, Math.floor(v * chapters.length)));
     setStage((cur) => (cur === next ? cur : next));
   });
   const copy = reduce ? chapters[0] : chapters[stage];
-
-  const badge = useTransform(scroll, [0.84, 0.91], [0, 1]);
-  const badgeY = useTransform(scroll, [0.84, 0.91], [14, 0]);
 
   // No transform on this panel, and specifically no scale. R3F measures its
   // container with getBoundingClientRect() and does not pass offsetSize to
@@ -241,7 +285,7 @@ export function HomeHero() {
                   painted ? "opacity-0" : "opacity-100"
                 }`}
               />
-              {!reduce && (
+              {showScene && (
                 <motion.div
                   className="absolute inset-0"
                   initial={{ opacity: 0 }}
@@ -253,11 +297,95 @@ export function HomeHero() {
               )}
             </div>
 
-            {/* Phase 4 status badge — timed to the rear doors opening. */}
-            {!reduce && (
+
+            {/* Chapter index */}
+            {showScene && (
+              <div className="absolute right-6 top-6 z-10 hidden flex-col items-end gap-1 sm:flex">
+                {chapters.map((c, i) => (
+                  <ChapterTick key={c.label} index={i} progress={eased} />
+                ))}
+              </div>
+            )}
+
+            {/* Legibility scrim — the copy column sits at full opacity on top
+                of it, so nothing in the left column is ever semi-transparent. */}
+            <div className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/40 to-transparent" />
+            <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-black/70 to-transparent" />
+
+            {/* Copy */}
+            {/* z-20 is belt and braces — the column already paints over the
+                absolutely-positioned canvas by DOM order — but it states the
+                intent, and it keeps the CTAs above anything added later. */}
+            <div className="relative z-20 flex h-screen min-h-[650px] flex-col p-7 pb-8 pt-20 sm:p-12 sm:pb-10 sm:pt-32 lg:p-16 lg:pb-12 lg:pt-32">
+              {/* Stage marker, headline and paragraph, all keyed to the same
+                  stage so they change together.
+
+                  One h1 and one p in the DOM at a time, with the text swapped
+                  rather than four copies stacked and faded: four h1 elements
+                  is four headings for a screen reader to walk through, and
+                  the outgoing copy stays selectable and searchable while it
+                  is invisible. AnimatePresence mode="wait" holds the incoming
+                  until the outgoing has gone, so they never overlap. */}
+              <div className="min-h-[230px] sm:min-h-[290px] lg:min-h-[320px]">
+                <AnimatePresence mode="wait" initial={false}>
+                  <motion.div
+                    key={stage}
+                    initial={reduce ? false : { opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={reduce ? undefined : { opacity: 0, y: -12 }}
+                    transition={{ duration: 0.42, ease }}
+                  >
+                    {!reduce && (
+                      <span
+                        className="mb-5 block font-mono text-[11px] uppercase tracking-[0.18em] text-accent"
+                        aria-hidden="true"
+                      >
+                        {String(stage + 1).padStart(2, "0")} — {copy.label}
+                      </span>
+                    )}
+                    {/* Two blocks, so the break is a decision rather than a
+                        wrap that happens to land there at one width. The
+                        clamp floor is set so the longest first line still
+                        fits a 360px screen inside the column padding. */}
+                    {/* 720px and a 4rem cap, because the longest first line
+                        is 21 characters: at the old 4.3rem cap that measured
+                        ~679px against a 640px column and broke to a third
+                        line on three of the four headings. */}
+                    <h1 className="max-w-[720px] font-display text-[clamp(1.75rem,5.4vw,4rem)] font-600 leading-[1.04] tracking-tighter text-white">
+                      {copy.title.map((line, i) => (
+                        <span key={line} className="block">
+                          {stage === 0 && !reduce ? (
+                            <StaggerText text={line} delay={0.1 + i * 0.18} />
+                          ) : (
+                            line
+                          )}
+                        </span>
+                      ))}
+                    </h1>
+                    {/* text-pretty keeps the last line from breaking to a
+                        single orphaned word. */}
+                    <p className="mt-5 max-w-[480px] text-pretty text-base leading-relaxed text-white/80 sm:text-lg">
+                      {copy.body}
+                    </p>
+                  </motion.div>
+                </AnimatePresence>
+              </div>
+
+
+              {/* Standing claim, not a scroll payoff — it used to fade in
+                  with the rear doors at p 0.84, so it never appeared at all
+                  on mobile and only briefly on desktop.
+
+                  In the copy flow rather than pinned to a corner: mt-auto
+                  here is what pushes the badge, the buttons and the cards to
+                  the bottom as one group, and self-start keeps the pill at
+                  its content width instead of stretching across the column
+                  the way a flex child otherwise would. */}
               <motion.div
-                style={{ opacity: badge, y: badgeY }}
-                className="absolute bottom-6 right-6 z-10 hidden items-center gap-2.5 rounded-full bg-paper/95 py-2.5 pl-3 pr-4 shadow-lg backdrop-blur sm:flex"
+                initial={reduce ? undefined : { opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: 0.95, ease }}
+                className="mb-4 mt-auto inline-flex self-start items-center gap-2.5 rounded-full bg-paper/95 py-2.5 pl-3 pr-4 shadow-lg backdrop-blur"
               >
                 <span className="flex h-6 w-6 items-center justify-center rounded-full bg-accent">
                   <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -274,70 +402,12 @@ export function HomeHero() {
                   On-Time All-India Delivery
                 </span>
               </motion.div>
-            )}
-
-            {/* Chapter index */}
-            {!reduce && (
-              <div className="absolute right-6 top-6 z-10 hidden flex-col items-end gap-1 sm:flex">
-                {chapters.map((c, i) => (
-                  <ChapterTick key={c.label} index={i} progress={scroll} />
-                ))}
-              </div>
-            )}
-
-            {/* Legibility scrim — the copy column sits at full opacity on top
-                of it, so nothing in the left column is ever semi-transparent. */}
-            <div className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/40 to-transparent" />
-            <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-black/70 to-transparent" />
-
-            {/* Copy */}
-            <div className="relative flex h-screen min-h-[650px] flex-col p-7 pb-8 pt-28 sm:p-12 sm:pb-10 sm:pt-32 lg:p-16 lg:pb-12 lg:pt-32">
-              {/* Stage marker, headline and paragraph, all keyed to the same
-                  stage so they change together.
-
-                  One h1 and one p in the DOM at a time, with the text swapped
-                  rather than four copies stacked and faded: four h1 elements
-                  is four headings for a screen reader to walk through, and
-                  the outgoing copy stays selectable and searchable while it
-                  is invisible. AnimatePresence mode="wait" holds the incoming
-                  until the outgoing has gone, so they never overlap. */}
-              <div className="min-h-[300px] sm:min-h-[290px] lg:min-h-[320px]">
-                <AnimatePresence mode="wait" initial={false}>
-                  <motion.div
-                    key={stage}
-                    initial={reduce ? false : { opacity: 0, y: 16 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={reduce ? undefined : { opacity: 0, y: -12 }}
-                    transition={{ duration: 0.42, ease }}
-                  >
-                    {!reduce && (
-                      <span
-                        className="mb-4 block font-mono text-[11px] uppercase tracking-[0.18em] text-accent"
-                        aria-hidden="true"
-                      >
-                        {String(stage + 1).padStart(2, "0")} — {copy.label}
-                      </span>
-                    )}
-                    <h1 className="max-w-[640px] font-display text-[clamp(2.5rem,5.4vw,4.3rem)] font-600 leading-[1.04] tracking-tighter text-white">
-                      {stage === 0 && !reduce ? (
-                        <StaggerText text={copy.title} delay={0.1} />
-                      ) : (
-                        copy.title
-                      )}
-                    </h1>
-                    <p className="mt-6 max-w-[470px] text-base leading-relaxed text-white/80 sm:text-lg">
-                      {copy.body}
-                    </p>
-                  </motion.div>
-                </AnimatePresence>
-              </div>
-
 
               <motion.div
                 initial={reduce ? undefined : { opacity: 0, y: 18 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.7, delay: 0.7, ease }}
-                className="mt-auto flex flex-wrap items-center gap-3 pt-10"
+                className="relative z-50 flex flex-wrap items-center gap-3"
               >
                 <Link
                   href="/contact"
@@ -369,18 +439,26 @@ export function HomeHero() {
 
               {/* Service cards — one horizontal row pinned under the CTA
                   group, so the canvas centre stays clear of UI. */}
-              <div className="grid grid-cols-3 gap-4 pt-10 lg:max-w-[620px]">
+              {/* A snap rail below sm, a grid above it. Three cards squeezed
+                  into a 360px row leaves each one 100px wide, which is not a
+                  card — it is a truncated label. Scrolling keeps them
+                  readable at full size. The negative margin lets the rail
+                  bleed to the panel edge so the last card does not look
+                  clipped by the padding. */}
+              <div
+                className="-mx-7 flex snap-x snap-mandatory gap-3 overflow-x-auto px-7 pt-6 pb-1 sm:pt-10 [scrollbar-width:none] sm:mx-0 sm:ml-auto sm:grid sm:max-w-[620px] sm:grid-cols-3 sm:gap-4 sm:overflow-visible sm:px-0"
+              >
                 {chips.map((chip, i) => (
                   <motion.div
                     key={chip.title}
                     initial={reduce ? undefined : { opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.65, delay: 0.85 + i * 0.12, ease }}
-                    className="flex flex-col rounded-2xl border border-white/12 bg-white/[0.07] p-3.5 backdrop-blur-sm sm:p-5"
+                    className="flex min-w-[62%] shrink-0 snap-start flex-col rounded-2xl border border-white/12 bg-white/[0.07] p-5 backdrop-blur-sm sm:min-w-0 sm:shrink"
                   >
-                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 text-accent sm:h-10 sm:w-10">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/10 text-accent">
                       <svg
-                        className="h-4 w-4 sm:h-5 sm:w-5"
+                        className="h-5 w-5"
                         viewBox="0 0 24 24"
                         fill="none"
                         stroke="currentColor"
@@ -389,10 +467,10 @@ export function HomeHero() {
                         {chip.icon}
                       </svg>
                     </span>
-                    <span className="mt-3 block font-display text-xs font-600 leading-snug text-paper sm:mt-4 sm:text-sm">
+                    <span className="mt-3 block font-display text-sm font-600 leading-snug text-paper sm:mt-4">
                       {chip.title}
                     </span>
-                    <span className="mt-1 hidden text-xs leading-relaxed text-grey-300 sm:block">
+                    <span className="mt-1 block text-xs leading-relaxed text-grey-300">
                       {chip.body}
                     </span>
                   </motion.div>
