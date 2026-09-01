@@ -1,1 +1,20 @@
-{}
+{
+  "components/home/HomeHero.tsx -> ./HeroScene": {
+    "id": "components/home/HomeHero.tsx -> ./HeroScene",
+    "files": [
+      "static/chunks/_app-pages-browser_components_home_HeroScene_tsx.js"
+    ]
+  },
+  "components/home/HomeHero.tsx -> gsap": {
+    "id": "components/home/HomeHero.tsx -> gsap",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_gsap_index_js.js"
+    ]
+  },
+  "components/home/HomeHero.tsx -> gsap/ScrollTrigger": {
+    "id": "components/home/HomeHero.tsx -> gsap/ScrollTrigger",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_gsap_ScrollTrigger_js.js"
+    ]
+  }
+}
