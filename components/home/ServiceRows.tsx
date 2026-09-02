@@ -64,7 +64,7 @@ const groups: Group[] = [
 
 export function ServiceRows() {
   return (
-    <section className="py-24 sm:py-32">
+    <section className="py-14 sm:py-20">
       <div className="shell">
         <Reveal>
           <div className="max-w-[650px]">
@@ -79,7 +79,7 @@ export function ServiceRows() {
           </div>
         </Reveal>
 
-        <div className="mt-14 flex flex-col gap-6">
+        <div className="mt-10 flex flex-col gap-6">
           {groups.map((group) => {
             const items = group.ids
               .map((id) => services.find((s) => s.id === id))
@@ -98,10 +98,7 @@ export function ServiceRows() {
                     className="group relative flex min-h-[300px] flex-col gap-6 rounded-2xl bg-[#0A0A0A] p-7 transition-transform duration-500 ease-smooth hover:scale-[1.02] sm:min-h-[320px] sm:flex-row sm:items-stretch sm:gap-8 sm:p-9 lg:w-[63%] lg:shrink-0 lg:self-stretch"
                   >
                     {/* Text column — ordered after the image on sm+ */}
-                    <div className="flex flex-col justify-between sm:order-2 sm:w-1/2">
-                      <span className="font-mono text-sm text-grey-500">
-                        {group.index}
-                      </span>
+                    <div className="flex flex-col justify-center sm:order-2 sm:w-1/2">
                       <div>
                         <h3 className="font-display text-2xl font-600 tracking-tight text-paper transition-transform duration-500 ease-smooth group-hover:translate-x-1 sm:text-[1.7rem]">
                           {group.title}
@@ -109,22 +106,6 @@ export function ServiceRows() {
                         <p className="mt-2 text-sm text-grey-400 sm:text-base">
                           {group.line}
                         </p>
-                        <span className="mt-6 inline-flex h-11 w-11 items-center justify-center rounded-lg bg-paper/10 text-paper transition-all duration-300 ease-smooth group-hover:bg-accent group-hover:text-ink">
-                          <svg
-                            className="h-4 w-4"
-                            viewBox="0 0 16 16"
-                            fill="none"
-                            aria-hidden="true"
-                          >
-                            <path
-                              d="M3 8h9M8 4l4 4-4 4"
-                              stroke="currentColor"
-                              strokeWidth="1.8"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            />
-                          </svg>
-                        </span>
                       </div>
                     </div>
 

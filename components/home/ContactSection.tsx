@@ -95,7 +95,7 @@ export function ContactSection() {
   };
 
   return (
-    <section id="contact" className="bg-paper py-24 sm:py-32">
+    <section id="contact" className="bg-paper py-14 sm:py-20">
       <div className="shell grid gap-14 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:gap-20">
         {/* Channels */}
         <div>

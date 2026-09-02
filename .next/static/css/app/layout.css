@@ -1158,8 +1158,8 @@ video {
 .-top-16 {
   top: -4rem;
 }
-.-top-40 {
-  top: -10rem;
+.-top-32 {
+  top: -8rem;
 }
 .-top-6 {
   top: -1.5rem;
@@ -1263,8 +1263,8 @@ video {
 .-mr-2 {
   margin-right: -0.5rem;
 }
-.-mt-16 {
-  margin-top: -4rem;
+.-mt-12 {
+  margin-top: -3rem;
 }
 .mb-2 {
   margin-bottom: 0.5rem;
@@ -1275,8 +1275,8 @@ video {
 .mb-5 {
   margin-bottom: 1.25rem;
 }
-.mb-9 {
-  margin-bottom: 2.25rem;
+.mb-8 {
+  margin-bottom: 2rem;
 }
 .mt-0\.5 {
   margin-top: 0.125rem;
@@ -1985,9 +1985,6 @@ video {
   --tw-bg-opacity: 1;
   background-color: rgb(233 228 228 / var(--tw-bg-opacity, 1));
 }
-.bg-paper\/10 {
-  background-color: rgb(255 252 252 / 0.1);
-}
 .bg-paper\/90 {
   background-color: rgb(255 252 252 / 0.9);
 }
@@ -2226,6 +2223,14 @@ video {
   padding-left: 2rem;
   padding-right: 2rem;
 }
+.py-12 {
+  padding-top: 3rem;
+  padding-bottom: 3rem;
+}
+.py-14 {
+  padding-top: 3.5rem;
+  padding-bottom: 3.5rem;
+}
 .py-16 {
   padding-top: 4rem;
   padding-bottom: 4rem;
@@ -2276,6 +2281,9 @@ video {
 .pb-10 {
   padding-bottom: 2.5rem;
 }
+.pb-14 {
+  padding-bottom: 3.5rem;
+}
 .pb-16 {
   padding-bottom: 4rem;
 }
@@ -2305,9 +2313,6 @@ video {
 }
 .pt-1 {
   padding-top: 0.25rem;
-}
-.pt-10 {
-  padding-top: 2.5rem;
 }
 .pt-16 {
   padding-top: 4rem;
@@ -3171,8 +3176,8 @@ body {
     margin-right: 3.5rem;
   }
 
-  .sm\:-mt-20 {
-    margin-top: -5rem;
+  .sm\:-mt-16 {
+    margin-top: -4rem;
   }
 
   .sm\:ml-auto {
@@ -3420,14 +3425,14 @@ body {
     padding-right: 2.25rem;
   }
 
+  .sm\:py-16 {
+    padding-top: 4rem;
+    padding-bottom: 4rem;
+  }
+
   .sm\:py-20 {
     padding-top: 5rem;
     padding-bottom: 5rem;
-  }
-
-  .sm\:py-24 {
-    padding-top: 6rem;
-    padding-bottom: 6rem;
   }
 
   .sm\:py-28 {
@@ -3454,16 +3459,16 @@ body {
     padding-bottom: 2.5rem;
   }
 
+  .sm\:pb-16 {
+    padding-bottom: 4rem;
+  }
+
   .sm\:pb-20 {
     padding-bottom: 5rem;
   }
 
   .sm\:pb-24 {
     padding-bottom: 6rem;
-  }
-
-  .sm\:pb-32 {
-    padding-bottom: 8rem;
   }
 
   .sm\:pb-6 {
@@ -3735,8 +3740,8 @@ body {
     padding-right: 4rem;
   }
 
-  .lg\:pt-24 {
-    padding-top: 6rem;
+  .lg\:pt-20 {
+    padding-top: 5rem;
   }
 
   .lg\:pt-32 {

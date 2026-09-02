@@ -77,7 +77,7 @@ export function ColdChainStory() {
   const reduce = useReducedMotion();
 
   return (
-    <section className="py-24 sm:py-32">
+    <section className="py-14 sm:py-20">
       <div className="shell grid items-center gap-14 lg:grid-cols-2">
         {/* Narrative */}
         <div>

@@ -95,7 +95,7 @@ export function TrustedPartners() {
   }, []);
 
   return (
-    <section className="relative py-16 sm:py-20">
+    <section className="relative py-12 sm:py-16">
       <Image
         src="/image.png"
         alt=""

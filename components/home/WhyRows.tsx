@@ -53,7 +53,7 @@ export function WhyRows() {
   const reduce = useReducedMotion();
 
   return (
-    <section className="bg-[#101010] py-20 sm:py-24">
+    <section className="bg-[#101010] py-14 sm:py-20">
       <div className="shell">
         {/* Header */}
         <motion.span
@@ -86,7 +86,7 @@ export function WhyRows() {
         </motion.p>
 
         {/* Two-column: image left, accordion right */}
-        <div className="mt-12 grid gap-10 lg:grid-cols-[minmax(0,4fr)_minmax(0,7fr)] lg:items-center lg:gap-14">
+        <div className="mt-10 grid gap-10 lg:grid-cols-[minmax(0,4fr)_minmax(0,7fr)] lg:items-center lg:gap-14">
           <motion.div
             initial={reduce ? undefined : { opacity: 0, x: -60, rotate: -2 }}
             whileInView={{ opacity: 1, x: 0, rotate: 0 }}

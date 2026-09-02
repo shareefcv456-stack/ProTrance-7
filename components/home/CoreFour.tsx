@@ -109,7 +109,7 @@ export function CoreFour() {
   });
 
   return (
-    <section className="bg-[#101010] py-24 sm:py-32">
+    <section className="bg-[#101010] py-14 sm:py-20">
       <div className="shell">
         <Reveal>
           <div className="mx-auto max-w-xl text-center">
@@ -124,7 +124,7 @@ export function CoreFour() {
 
         <div
           ref={gridRef}
-          className="mt-14 grid gap-6 sm:grid-cols-2 xl:grid-cols-4 xl:pb-16"
+          className="mt-10 grid gap-6 sm:grid-cols-2 xl:grid-cols-4 xl:pb-16"
         >
           {coreValues.map((value, i) => (
             <CoreCard
