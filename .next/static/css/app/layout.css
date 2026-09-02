@@ -1666,6 +1666,9 @@ video {
 .transform {
   transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
 }
+.transform-gpu {
+  transform: translate3d(var(--tw-translate-x), var(--tw-translate-y), 0) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
+}
 @keyframes scroll-x {
 
   from {
@@ -2819,6 +2822,9 @@ video {
 }
 .ease-smooth {
   transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+.will-change-transform {
+  will-change: transform;
 }
 .text-pretty {
     text-wrap: pretty;

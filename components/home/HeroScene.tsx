@@ -262,6 +262,24 @@ function Rounded({ w, h, d, r = 0.07 }: { w: number; h: number; d: number; r?: n
   return <primitive object={geo} attach="geometry" />;
 }
 
+/** Textures are GPU allocations. React drops the reference when the hero
+    unmounts, but nothing frees the buffer — and every procedural map below
+    is generated per component instance, so a route change away from the
+    home page leaks the whole set. One place to free them, used by all of
+    them; it takes a texture or the map of textures a generator returns. */
+function useDisposable<T>(value: T): T {
+  useEffect(
+    () => () => {
+      const free = (v: unknown) => (v as { dispose?: () => void } | null)?.dispose?.();
+      if (value && typeof value === "object" && !("dispose" in value))
+        Object.values(value).forEach(free);
+      else free(value);
+    },
+    [value],
+  );
+  return value;
+}
+
 /** Radial falloff used for lamp glow and the ground contact shadow. */
 function radialTexture(stops: Array<[number, string]>) {
   const c = document.createElement("canvas");
@@ -362,7 +380,7 @@ function useProceduralEnv() {
 function useAsphalt(repeatY: number) {
   const maxAniso = useThree((st) => st.gl.capabilities.getMaxAnisotropy());
 
-  return useMemo(() => {
+  return useDisposable(useMemo(() => {
     const SZ = 512;
     const c = document.createElement("canvas");
     c.width = SZ;
@@ -451,14 +469,14 @@ function useAsphalt(repeatY: number) {
       roughnessMap: make(w, false, 1, Math.max(2, repeatY / 9)),
       normalMap: make(n, false),
     };
-  }, [repeatY, maxAniso]);
+  }, [repeatY, maxAniso]));
 }
 
 /** Corrugated steel: vertical ribs baked straight into a tangent-space
     normal map. It is the ribbing, more than the colour, that separates a
     shipping container from a coloured box. */
 function useCorrugation() {
-  return useMemo(() => {
+  return useDisposable(useMemo(() => {
     const c = document.createElement("canvas");
     c.width = 128;
     c.height = 4;
@@ -480,7 +498,7 @@ function useCorrugation() {
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     t.repeat.set(3, 1);
     return t;
-  }, []);
+  }, []));
 }
 
 /** A mountain range as real geometry rather than a painted silhouette: a
@@ -607,7 +625,7 @@ function sobelNormal(src: HTMLCanvasElement, size: number, strength: number) {
     they share one texture; roughness varies per box already, so this reads
     as different boxes rather than a repeated decal. */
 function useWeather() {
-  return useMemo(() => {
+  return useDisposable(useMemo(() => {
     const c = document.createElement("canvas");
     c.width = 128;
     c.height = 128;
@@ -631,13 +649,13 @@ function useWeather() {
     const t = new THREE.CanvasTexture(c);
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     return t;
-  }, []);
+  }, []));
 }
 
 /** Yellow-and-black hazard striping, for bollards, barrier booms and dock
     bumpers. Diagonal bands drawn once and repeated round the geometry. */
 function useHazard() {
-  return useMemo(() => {
+  return useDisposable(useMemo(() => {
     const c = document.createElement("canvas");
     c.width = 64;
     c.height = 64;
@@ -662,14 +680,14 @@ function useHazard() {
     t.colorSpace = THREE.SRGBColorSpace;
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     return t;
-  }, []);
+  }, []));
 }
 
 /** Chain-link, as an alpha mask rather than geometry. A woven fence modelled
     as meshes is thousands of draw calls for something read at 30 metres;
     one alphaTest plane per panel is the same picture. */
 function useChainLink() {
-  return useMemo(() => {
+  return useDisposable(useMemo(() => {
     const c = document.createElement("canvas");
     c.width = 64;
     c.height = 64;
@@ -692,14 +710,14 @@ function useChainLink() {
     t.colorSpace = THREE.SRGBColorSpace;
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     return t;
-  }, []);
+  }, []));
 }
 
 /** Tyre rubber: a tread block pattern as a bump map. Tyres are the one part
     of a truck a viewer has seen up close, and a perfectly smooth black
     cylinder is the tell that gives a render away. */
 function useRubber() {
-  return useMemo(() => {
+  return useDisposable(useMemo(() => {
     const SZ = 128;
     const c = document.createElement("canvas");
     c.width = SZ;
@@ -734,12 +752,12 @@ function useRubber() {
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     t.repeat.set(10, 1);
     return t;
-  }, []);
+  }, []));
 }
 
 /** One soft round sprite, shared by every particle system on the page. */
 function useMote() {
-  return useMemo(
+  return useDisposable(useMemo(
     () =>
       radialTexture([
         [0, "rgba(255,255,255,0.95)"],
@@ -747,7 +765,7 @@ function useMote() {
         [1, "rgba(255,255,255,0)"],
       ]),
     [],
-  );
+  ));
 }
 
 /** Airborne motes inside a box volume, wrapping at the edges so the system
@@ -843,7 +861,7 @@ function Dust({
     ponytail: swap for a raymarched pass only if the shafts ever have to be
     occluded by geometry — these cannot be. */
 function LightShafts({ alpha }: { alpha: MutableRefObject<number> }) {
-  const tex = useMemo(() => {
+  const tex = useDisposable(useMemo(() => {
     const c = document.createElement("canvas");
     c.width = 64;
     c.height = 64;
@@ -865,7 +883,7 @@ function LightShafts({ alpha }: { alpha: MutableRefObject<number> }) {
     ctx.fillStyle = v;
     ctx.fillRect(0, 0, 64, 64);
     return new THREE.CanvasTexture(c);
-  }, []);
+  }, []));
 
   const material = useMemo(
     () =>
@@ -899,6 +917,44 @@ function LightShafts({ alpha }: { alpha: MutableRefObject<number> }) {
       ))}
     </group>
   );
+}
+
+/** Stop drawing once the hero has left the viewport.
+
+    This is the scroll lag. The hero is a 380vh sticky section, so by the
+    time you reach the services rows it is long gone — but the canvas keeps
+    running: a 2048 shadow pass, a bloom composer and several hundred meshes,
+    a full frame budget spent on pixels nobody can see, for the whole rest of
+    the page. Everything below it then competes for what is left.
+
+    `never` rather than `demand`: while the hero *is* on screen the scene has
+    ambient motion that owes nothing to scroll — the crew walk, the sea
+    displaces, the crane runs — so gating frames on ScrollTrigger alone would
+    freeze the scene the moment you stopped moving. Visibility is the gate
+    that costs nothing to be wrong about.
+
+    setFrameloop leaves a stopped loop stopped, so resuming needs the
+    invalidate to kick the next frame. */
+function PauseOffscreen() {
+  const gl = useThree((st) => st.gl);
+  const setFrameloop = useThree((st) => st.setFrameloop);
+  const invalidate = useThree((st) => st.invalidate);
+
+  useEffect(() => {
+    const io = new IntersectionObserver(
+      ([e]) => {
+        setFrameloop(e.isIntersecting ? "always" : "never");
+        if (e.isIntersecting) invalidate();
+      },
+      // Resume a little before it is actually visible, so the first frame
+      // back is already drawn rather than arriving a frame late.
+      { rootMargin: "200px" },
+    );
+    io.observe(gl.domElement);
+    return () => io.disconnect();
+  }, [gl, setFrameloop, invalidate]);
+
+  return null;
 }
 
 /** Lamp glow only: RenderPass → Bloom → Output. No depth of field — a
@@ -955,7 +1011,7 @@ function Effects({ progress }: { progress: MutableRefObject<number> }) {
 
 /** Soft contact shadow so the truck sits on the road rather than hovering. */
 function ContactShadow() {
-  const tex = useMemo(
+  const tex = useDisposable(useMemo(
     () =>
       radialTexture([
         [0, "rgba(0,0,0,0.68)"],
@@ -963,7 +1019,7 @@ function ContactShadow() {
         [1, "rgba(0,0,0,0)"],
       ]),
     [],
-  );
+  ));
   if (!tex) return null;
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, -0.6]}>
@@ -3307,6 +3363,7 @@ function Rig({
         </group>
       </Suspense>
 
+      <PauseOffscreen />
       {quality === "high" && <Effects progress={eased} />}
     </>
   );
@@ -3331,23 +3388,29 @@ export default function HeroScene({
     [],
   );
 
+  // Capped at 1.5 everywhere, phone or 5K panel. Shading cost is per pixel
+  // and scales with the square of this: dpr 2 is 1.8x the fragments of 1.5,
+  // and dpr 3 is four times them, for a difference nobody resolves on a
+  // moving background render. This is the single biggest fill-rate lever.
+  const dpr = useMemo(
+    () => (typeof window === "undefined" ? 1 : Math.min(window.devicePixelRatio, 1.5)),
+    [],
+  );
+
   return (
     <Canvas
-      // Native device resolution, capped at 2 — past that the cost is real
-      // and the gain is not. PCF rather than PCFSoft: golden-hour sun throws
-      // a hard edge, and a softened one reads as low resolution.
-      // 1.5 on phones. A 3x phone panel at dpr 2 is rendering four times the
-      // pixels of dpr 1 for a difference nobody holds the device close
-      // enough to resolve, and fragment cost is where a mobile GPU runs out.
-      dpr={Math.min(
-        typeof window === "undefined" ? 1 : window.devicePixelRatio,
-        quality === "high" ? 2 : 1.5,
-      )}
+      dpr={dpr}
       // Shadows off on mobile, not merely lower-resolution: the map is a
       // whole extra scene render every frame, and halving its size halves
       // nothing about that.
       shadows={quality === "high" ? "percentage" : false}
-      gl={{ antialias: true, powerPreference: "high-performance" }}
+      // MSAA on the default framebuffer is dead weight on a high-DPI screen:
+      // the device pixels are already smaller than the artefact it smooths,
+      // and it costs a multisampled backbuffer for the whole canvas. The
+      // high-quality path keeps its edges anyway — Effects renders into its
+      // own 4x-sampled target, which is where the antialiasing that matters
+      // actually happens.
+      gl={{ antialias: dpr < 1.5, powerPreference: "high-performance" }}
       camera={{ fov: 38, near: 0.5, far: 400, position: SHOTS[0].pos }}
       aria-hidden
     >

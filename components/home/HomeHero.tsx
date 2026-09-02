@@ -187,6 +187,12 @@ export function HomeHero() {
   // timer instead meant a slow GPU showed an empty canvas washing over the
   // photograph — the one moment the photograph is doing all the work.
   const [painted, setPainted] = useState(false);
+  // The scene chunk is ~363k of three.js, GSAP and addons, and next/dynamic
+  // requests it the moment the component renders — in parallel with the very
+  // image the LCP is measured on. Holding it until the poster has decoded
+  // costs the 3D nothing perceptible (it needs a second to build the scene
+  // regardless) and takes the whole download off the critical path.
+  const [poster, setPoster] = useState(false);
   // Resolved in an effect rather than at render, so the server and the first
   // client pass agree and hydration stays quiet.
   const [phone, setPhone] = useState(false);
@@ -265,7 +271,11 @@ export function HomeHero() {
       // open down the edges; against ink it reads as the panel insetting.
       className="relative bg-ink lg:h-[380vh]"
     >
-      <div className="lg:sticky lg:top-0">
+      {/* The pinned panel and the copy column both get their own compositor
+          layer. Without it every scroll tick repaints a full-viewport stack
+          of gradients, blurred chips and text against a canvas that is
+          itself changing — on the main thread, next to the scroll handler. */}
+      <div className="transform-gpu will-change-transform lg:sticky lg:top-0">
         {/* Hero module — inset rounded image panel */}
         <div className="relative">
           <div className="relative h-screen min-h-[650px] overflow-hidden bg-ink">
@@ -280,12 +290,20 @@ export function HomeHero() {
                 alt="A PRO TRANS container truck at a port terminal, dock crew loading beside stacked shipping containers"
                 fill
                 priority
+                // 2.1MB of source PNG behind a black scrim at 40-85% opacity.
+                // Nothing here survives that at full quality, and this is the
+                // LCP element, so the bytes are the metric.
+                quality={68}
                 sizes="(min-width: 1400px) 1320px, 100vw"
+                onLoad={() => setPoster(true)}
+                // A poster that 404s must not also cost the 3D — this gate
+                // is a scheduling hint, not a dependency.
+                onError={() => setPoster(true)}
                 className={`object-cover object-[62%_center] transition-opacity duration-700 ${
                   painted ? "opacity-0" : "opacity-100"
                 }`}
               />
-              {showScene && (
+              {showScene && poster && (
                 <motion.div
                   className="absolute inset-0"
                   initial={{ opacity: 0 }}
@@ -316,7 +334,7 @@ export function HomeHero() {
             {/* z-20 is belt and braces — the column already paints over the
                 absolutely-positioned canvas by DOM order — but it states the
                 intent, and it keeps the CTAs above anything added later. */}
-            <div className="relative z-20 flex h-screen min-h-[650px] flex-col p-7 pb-8 pt-20 sm:p-12 sm:pb-10 sm:pt-32 lg:p-16 lg:pb-12 lg:pt-32">
+            <div className="relative z-20 transform-gpu flex h-screen min-h-[650px] flex-col p-7 pb-8 pt-20 sm:p-12 sm:pb-10 sm:pt-32 lg:p-16 lg:pb-12 lg:pt-32">
               {/* Stage marker, headline and paragraph, all keyed to the same
                   stage so they change together.
 
