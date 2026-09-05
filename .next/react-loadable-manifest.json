@@ -1,20 +1,23 @@
 {
   "components/home/HomeHero.tsx -> ./HeroScene": {
-    "id": "components/home/HomeHero.tsx -> ./HeroScene",
+    "id": 2363,
     "files": [
-      "static/chunks/_app-pages-browser_components_home_HeroScene_tsx.js"
+      "static/chunks/b536a0f1.1249f719d932f90b.js",
+      "static/chunks/980.201ef778d05853a7.js",
+      "static/chunks/363.2feef9067b187b20.js"
     ]
   },
   "components/home/HomeHero.tsx -> gsap": {
-    "id": "components/home/HomeHero.tsx -> gsap",
+    "id": 6498,
     "files": [
-      "static/chunks/_app-pages-browser_node_modules_gsap_index_js.js"
+      "static/chunks/c15bf2b0.0743d569cdf530e0.js",
+      "static/chunks/498.e95821d3da281282.js"
     ]
   },
   "components/home/HomeHero.tsx -> gsap/ScrollTrigger": {
-    "id": "components/home/HomeHero.tsx -> gsap/ScrollTrigger",
+    "id": 9498,
     "files": [
-      "static/chunks/_app-pages-browser_node_modules_gsap_ScrollTrigger_js.js"
+      "static/chunks/84.e125f073022f44fa.js"
     ]
   }
 }

@@ -1,1 +1,14 @@
 node_modules
+
+# Build output. Never commit these: a tracked .next means a stale build is
+# restored by any checkout, and the served HTML then references chunk names
+# that no longer exist on disk — which is exactly the 404 storm this
+# .gitignore entry was added to stop recurring.
+.next
+.next-dev
+out
+dist
+
+# Local env and OS cruft
+.env*.local
+.DS_Store

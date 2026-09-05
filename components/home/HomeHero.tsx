@@ -22,22 +22,21 @@ const HeroScene = dynamic(() => import("./HeroScene"), { ssr: false });
 
 /** Serve phones the poster instead of the WebGL hero.
  *
- * Measured, gzipped, before a line of this project's own code: three.js
- * 256k, its postprocessing and GLTF addons 27k, gsap and ScrollTrigger 80k.
- * That is 363k of JavaScript for a phone to download, parse and execute,
- * and then a 3300-line scene that builds several hundred meshes and
- * generates half a dozen procedural textures synchronously at mount.
- * Lighthouse's mobile profile applies roughly a 4x CPU slowdown on top.
+ * Off, deliberately: the brief requires the 3D truck to be clearly visible
+ * on mobile, so the scene ships to phones and the saving is taken out of the
+ * scene instead — the "low" quality path drops shadows, the bloom composer,
+ * two thirds of the container field and roughly half the palms, cartons and
+ * traffic, and caps the pixel ratio. The hero vehicle itself is never
+ * reduced, which is the one thing the brief rules out.
  *
- * The pixel-ratio cap, the narrowed framing and the disabled shadow pass
- * are all real savings and worth having — but they are fragment-shader and
- * fill-rate savings, and the number they are being asked to move is
- * dominated by main-thread JavaScript that never had to be there.
+ * The cost is real and worth stating: three.js, its addons, gsap and
+ * ScrollTrigger are ~363k gzipped of JavaScript before a line of this
+ * project's own code, and Lighthouse's mobile profile applies roughly a 4x
+ * CPU slowdown on top. /image.png still covers the first paint and the whole
+ * reduced-motion experience.
  *
- * /image.png is already a complete hero on its own: it is exactly what
- * reduced-motion visitors see today. This is left off because the mobile
- * 3D scene was explicitly asked for — it is the switch, not the verdict. */
-const SKIP_3D_ON_MOBILE = true;
+ * Flip this back to true to trade the mobile 3D for that budget. */
+const SKIP_3D_ON_MOBILE = false;
 
 /** One definition of "phone", used by the render gate and by the GSAP gate
     below. They have to agree: skipping the canvas but still loading a scroll
@@ -49,6 +48,13 @@ const PHONE_QUERY = "(max-width: 767px), (pointer: coarse)";
    inside the canvas's useFrame, so scrolling causes no React render) and to
    a MotionValue (so the DOM overlays below can bind with useTransform). */
 
+/** Where each stage starts, as scroll progress. Explicit rather than four
+    equal quarters, because the story is not evenly paced: the dock earns
+    nearly a third of the scroll and the yard arrival only the last fifth.
+    Equal quarters put "In transit" on screen while the forklift was still
+    working. */
+const STAGE_AT = [0, 0.5, 0.7, 0.86];
+
 const chapters = [
   {
     label: "Warehouse",
@@ -57,7 +63,7 @@ const chapters = [
     body: "FMCG freight across South India with Pan-India reach. Cold-chain ready and GPS-tracked throughout.",
   },
   {
-    label: "In transit",
+    label: "In Transit",
     sub: "Pan-India line haul",
     title: ["Sealed at the dock.", "Tracked to the door."],
     body: "Line haul across the national corridors, every handover logged against the docket.",
@@ -79,12 +85,21 @@ const chapters = [
 /** Scroll band for chapter `i`: fade in, hold, fade out. The first chapter
     is opaque from the top and the last holds to the end, so the scene never
     drops to bare photo between crossfades. */
-const FADE = 0.06;
+const FADE = 0.05;
 function band(i: number, n: number): [number[], number[]] {
-  const input = [i / n - FADE, i / n + FADE, (i + 1) / n - FADE, (i + 1) / n + FADE];
+  const from = STAGE_AT[i];
+  const to = i === n - 1 ? 1 : STAGE_AT[i + 1];
+  const input = [from - FADE, from + FADE, to - FADE, to + FADE];
   if (i === 0) [input[0], input[1]] = [-1, -0.5];
   if (i === n - 1) [input[2], input[3]] = [2, 3];
   return [input, [0, 1, 1, 0]];
+}
+
+/** Which stage a given progress is in. */
+function stageAt(p: number) {
+  let i = 0;
+  for (let k = 1; k < STAGE_AT.length; k++) if (p >= STAGE_AT[k]) i = k;
+  return i;
 }
 
 /** Chapter index in the corner — all four always visible, the active one lit. */
@@ -106,16 +121,24 @@ function ChapterTick({
   const subX = useTransform(active, [0.55, 1], [10, 0]);
 
   return (
-    <div className="flex h-9 flex-col items-end justify-start">
-      <motion.div style={{ opacity }} className="flex items-center gap-3">
+    <div className="flex h-8 flex-col items-end justify-start sm:h-9">
+      <motion.div style={{ opacity }} className="flex items-center gap-2 sm:gap-3">
+        {/* Numbers only on a phone. The stacked layout puts the headline
+            directly under this column, and the full labels ran across it —
+            and the active stage's name is already spelled out at the top of
+            the copy, so the ticks lose nothing by being just the index. */}
         <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-white">
-          {chapters[index].label}
+          <span className="text-accent">{String(index + 1).padStart(2, "0")}</span>
+          <span className="hidden sm:inline"> {chapters[index].label}</span>
         </span>
         <motion.span style={{ width }} className="h-px bg-accent" />
       </motion.div>
+      {/* Sub-text belongs to the active stage only, and only where there is
+          room for it — on a phone the column is already the width of the
+          label. */}
       <motion.span
         style={{ opacity: subOpacity, x: subX }}
-        className="mt-1 block text-[10px] leading-none text-white/55"
+        className="mt-1 hidden text-[10px] leading-none text-white/55 sm:block"
       >
         {chapters[index].sub}
       </motion.span>
@@ -173,6 +196,10 @@ export function HomeHero() {
   // below lg the section keeps its natural height and the sequence plays
   // out over the hero's own scroll-out.
   const progress = useRef(0);
+  // Touch scrolling covers far less document per gesture than a wheel, so a
+  // phone needs its own runway or the whole eight-beat story flies past in
+  // two flicks. Shorter than desktop's, because a phone user is paying for
+  // every one of those viewports in thumb travel.
   const scroll = useMotionValue(0);
   // The canvas already damps its own copy of progress inside the render
   // loop; this is the DOM's equivalent, so the text fades and the chapter
@@ -207,7 +234,8 @@ export function HomeHero() {
     // Checked here rather than from the `phone` state above, and that matters:
     // state resolves after the first render, by which point this effect has
     // already fired and the import is in flight. Querying synchronously means
-    // GSAP is never requested on a phone at all.
+    // GSAP is never requested on a phone when the canvas is not going to be
+    // there either — the two gates have to agree.
     if (SKIP_3D_ON_MOBILE && window.matchMedia(PHONE_QUERY).matches) return;
 
     let cancelled = false;
@@ -246,7 +274,7 @@ export function HomeHero() {
   // exists to avoid.
   const [stage, setStage] = useState(0);
   useMotionValueEvent(eased, "change", (v) => {
-    const next = Math.min(chapters.length - 1, Math.max(0, Math.floor(v * chapters.length)));
+    const next = stageAt(v);
     setStage((cur) => (cur === next ? cur : next));
   });
   const copy = reduce ? chapters[0] : chapters[stage];
@@ -269,13 +297,16 @@ export function HomeHero() {
       // to 0.94, and whatever sits behind it becomes a visible frame on all
       // four sides. Against #fffcfc that frame reads as a white gap tearing
       // open down the edges; against ink it reads as the panel insetting.
-      className="relative bg-ink lg:h-[380vh]"
+      className="relative bg-ink h-[300vh] lg:h-[380vh]"
     >
       {/* The pinned panel and the copy column both get their own compositor
           layer. Without it every scroll tick repaints a full-viewport stack
           of gradients, blurred chips and text against a canvas that is
           itself changing — on the main thread, next to the scroll handler. */}
-      <div className="transform-gpu will-change-transform lg:sticky lg:top-0">
+      {/* Pinned at every breakpoint now that phones get the scene: without
+          this the section is 300vh of scroll with the canvas scrolled off the
+          top of it after the first one. */}
+      <div className="transform-gpu will-change-transform sticky top-0">
         {/* Hero module — inset rounded image panel */}
         <div className="relative">
           <div className="relative h-screen min-h-[650px] overflow-hidden bg-ink">
@@ -318,7 +349,7 @@ export function HomeHero() {
 
             {/* Chapter index */}
             {showScene && (
-              <div className="absolute right-6 top-6 z-10 hidden flex-col items-end gap-1 sm:flex">
+              <div className="absolute right-4 top-[4.6rem] z-10 flex flex-col items-end gap-1 sm:right-6 sm:top-6">
                 {chapters.map((c, i) => (
                   <ChapterTick key={c.label} index={i} progress={eased} />
                 ))}
@@ -326,9 +357,18 @@ export function HomeHero() {
             )}
 
             {/* Legibility scrim — the copy column sits at full opacity on top
-                of it, so nothing in the left column is ever semi-transparent. */}
-            <div className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/40 to-transparent" />
-            <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-black/70 to-transparent" />
+                of it, so nothing in the left column is ever semi-transparent.
+
+                Two directions, because the copy is in two places. Above sm it
+                sits in a left column and the scrim runs left-to-right, which
+                leaves the truck on the right in clear air. Below sm the copy
+                is stacked over the scene, so the same horizontal scrim would
+                darken one flank of the truck and leave the headline sitting
+                on a bright sky; vertical darkens the bands the text is
+                actually in and keeps the middle — where the truck is —
+                nearly clear. */}
+            <div className="absolute inset-0 bg-gradient-to-b from-black/85 via-black/15 to-black/80 sm:bg-gradient-to-r sm:from-black/85 sm:via-black/40 sm:to-transparent" />
+            <div className="absolute inset-x-0 bottom-0 hidden h-40 bg-gradient-to-t from-black/70 to-transparent sm:block" />
 
             {/* Copy */}
             {/* z-20 is belt and braces — the column already paints over the
@@ -464,7 +504,7 @@ export function HomeHero() {
                   bleed to the panel edge so the last card does not look
                   clipped by the padding. */}
               <div
-                className="-mx-7 flex snap-x snap-mandatory gap-3 overflow-x-auto px-7 pt-6 pb-1 sm:pt-10 [scrollbar-width:none] sm:mx-0 sm:ml-auto sm:grid sm:max-w-[620px] sm:grid-cols-3 sm:gap-4 sm:overflow-visible sm:px-0"
+                className="-mx-7 flex snap-x snap-mandatory gap-3 overflow-x-auto px-7 pt-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:ml-auto sm:grid sm:max-w-[620px] sm:grid-cols-3 sm:gap-4 sm:overflow-visible sm:px-0 sm:pt-10"
               >
                 {chips.map((chip, i) => (
                   <motion.div
@@ -472,7 +512,7 @@ export function HomeHero() {
                     initial={reduce ? undefined : { opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.65, delay: 0.85 + i * 0.12, ease }}
-                    className="flex min-w-[62%] shrink-0 snap-start flex-col rounded-2xl border border-white/12 bg-white/[0.07] p-5 backdrop-blur-sm sm:min-w-0 sm:shrink"
+                    className="flex min-w-[58%] shrink-0 snap-start flex-col rounded-2xl border border-white/20 bg-white/[0.10] p-4 shadow-[0_8px_32px_-12px_rgba(0,0,0,0.6)] backdrop-blur-md sm:min-w-0 sm:shrink sm:p-5"
                   >
                     <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/10 text-accent">
                       <svg

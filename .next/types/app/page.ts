@@ -1,4 +1,4 @@
-// File: /Users/muhammedshareefcv/Desktop/Paid-website-all-2026/protrance /protrans/app/page.tsx
+// File: /Users/muhammedshareefcv/Desktop/pro-trance/ProTrance-7/app/page.tsx
 import * as entry from '../../../app/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 
