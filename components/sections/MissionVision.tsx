@@ -12,7 +12,7 @@ export function MissionVision() {
             <div className="pointer-events-none absolute -left-16 -top-16 h-48 w-48 rounded-full bg-signal/10 blur-3xl transition-all duration-700 group-hover:bg-signal/20" />
             <div className="relative">
               <span className="eyebrow text-signal">Our Mission</span>
-              <p className="mt-8 font-display text-2xl font-700 leading-[1.28] tracking-tight text-ink sm:text-[1.7rem]">
+              <p className="mt-8 font-display text-[clamp(1.15rem,0.95rem+0.55vw,1.4rem)] font-700 leading-[1.4] tracking-tight text-ink">
                 {mission}
               </p>
             </div>
@@ -31,7 +31,7 @@ export function MissionVision() {
             <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-cold/10 blur-3xl transition-all duration-700 group-hover:bg-cold/20" />
             <div className="relative">
               <span className="eyebrow text-cold">Our Vision</span>
-              <p className="mt-8 font-display text-2xl font-700 leading-[1.28] tracking-tight text-ink sm:text-[1.7rem]">
+              <p className="mt-8 font-display text-[clamp(1.15rem,0.95rem+0.55vw,1.4rem)] font-700 leading-[1.4] tracking-tight text-ink">
                 {vision}
               </p>
             </div>

@@ -23,6 +23,12 @@ const jetbrains = JetBrains_Mono({
   weight: ["400", "500", "600"],
   variable: "--font-mono",
   display: "swap",
+  // Not preloaded. next/font puts a high-priority <link rel="preload"> in the
+  // head for every family, and this one only ever sets the small uppercase
+  // eyebrows and data chips — 22k of the critical path competing with the
+  // hero's own download for a handful of 11px labels. Discovered from CSS
+  // instead, and `swap` already covers the gap.
+  preload: false,
 });
 
 export const metadata: Metadata = {

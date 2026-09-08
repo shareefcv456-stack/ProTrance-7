@@ -6,16 +6,34 @@ import {
   useMemo,
   useRef,
   useState,
+  type ComponentType,
   type MutableRefObject,
 } from "react";
 import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
+
+/* The bloom composer and its three sibling passes are ~45k gzipped and only
+   the high-quality path ever mounts them. The import is fired from an effect
+   rather than sitting in a `lazy()` at module scope, so the request is made by
+   a branch the bundler cannot hoist — a phone, which renders no
+   post-processing at all, never asks for the chunk. */
+type EffectsProps = { progress: MutableRefObject<number> };
+
+function useEffectsChunk(enabled: boolean) {
+  const [Comp, setComp] = useState<ComponentType<EffectsProps> | null>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    let live = true;
+    void import("./HeroEffects").then((m) => {
+      if (live) setComp(() => m.default);
+    });
+    return () => {
+      live = false;
+    };
+  }, [enabled]);
+  return Comp;
+}
 import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
-import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
-import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
-import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
-import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 
 /* ── Scroll-driven 3D hero ───────────────────────────────────────────────
    Four phases along one continuous drive. The truck stays at the origin and
@@ -28,10 +46,9 @@ import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
    There are deliberately no OrbitControls: pointer-driven orbit fights the
    scroll that drives the story, so the camera is scroll's alone.
 
-   The truck is a real .glb the moment one exists at TRUCK_GLB; until then
-   the primitive build stands in. Everything else — camera, lighting, road,
-   scenery — is identical either way, so dropping the model in is the whole
-   of the swap. */
+   Every object is built from primitives. There is no model loader in this
+   chunk: the truck, forklift, crew and scenery are all geometry authored
+   here, which is why the hero has no .glb download to wait on. */
 
 const TRAVEL = 380;
 
@@ -1156,6 +1173,82 @@ function PauseOffscreen() {
   return null;
 }
 
+/** Adaptive render resolution.
+
+    The pixel ratio cap is a guess made at mount from `window.devicePixelRatio`,
+    and that number says nothing about the GPU behind it — a 2019 phone and a
+    current one both report 3. This closes the loop: it watches the actual
+    frame time and steps the ratio down when the device is not keeping up,
+    then back up when it is.
+
+    Nothing is removed at any step. Shading cost scales with the square of
+    this, so 1.5 → 1.25 is a third of the fragments off the budget while the
+    scene, its geometry, its lighting and its animation are all untouched —
+    the frame just resolves slightly softer, and only on hardware that was
+    dropping frames at the higher ratio anyway.
+
+    The dead band (worse than 45fps to step down, better than 58 to step up)
+    and the cooldown are what stop it oscillating: each change costs one R3F
+    re-render, so it has to be rare and decisive rather than continuous. */
+const DPR_STEP = 0.25;
+// 24 frames is ~0.4s at 60fps and ~0.8s at 30 — long enough not to react to a
+// single hitch, short enough that a device that cannot hold the cap has been
+// stepped down before the reader has finished the first beat of the story.
+// At 40 it took roughly five seconds and three windows to settle, and every
+// one of those was spent at the frame rate it was there to fix.
+const WINDOW = 24;
+// Shader compilation and the first texture uploads land in the opening frames
+// and are not a measurement of anything steady.
+const WARMUP = 30;
+
+function AdaptiveResolution({ max }: { max: number }) {
+  const setDpr = useThree((st) => st.setDpr);
+  const current = useRef(max);
+  const acc = useRef(0);
+  const frames = useRef(0);
+  const cooldown = useRef(0);
+  const warmup = useRef(0);
+  // Phones are allowed further down than desktops: 0.75 of a 3x screen is
+  // still 2.25 device pixels per CSS pixel, which no phone resolves.
+  const floor = max <= 1.25 ? 0.75 : 1;
+
+  useFrame((_, delta) => {
+    // A frame that straddles a tab switch or a long GC is not a measurement.
+    if (delta > 0.5) return;
+    if (warmup.current < WARMUP) {
+      warmup.current += 1;
+      return;
+    }
+    acc.current += delta;
+    frames.current += 1;
+    if (frames.current < WINDOW) return;
+
+    const avg = acc.current / frames.current;
+    acc.current = 0;
+    frames.current = 0;
+    if (cooldown.current > 0) {
+      cooldown.current -= 1;
+      return;
+    }
+
+    if (avg > 1 / 45 && current.current > floor) {
+      current.current = Math.max(floor, current.current - DPR_STEP);
+      setDpr(current.current);
+      // No cooldown going down. A device two steps above what it can hold
+      // should reach the bottom in two windows, not in six.
+      cooldown.current = 0;
+    } else if (avg < 1 / 58 && current.current < max) {
+      // Slower to climb back than to drop: recovering into a stutter is
+      // worse than sitting one step below the cap.
+      current.current = Math.min(max, current.current + DPR_STEP);
+      setDpr(current.current);
+      cooldown.current = 4;
+    }
+  });
+
+  return null;
+}
+
 /** Lamp glow only: RenderPass → Bloom → Output. No depth of field — a
     defocus pass is the one effect that can only ever remove detail, and the
     truck has to stay sharp at every point on the scroll.
@@ -1167,47 +1260,6 @@ function PauseOffscreen() {
     Rendering into that target also means the renderer skips tone mapping, so
     bloom thresholds against real HDR values and OutputPass tone maps exactly
     once at the end. */
-function Effects({ progress }: { progress: MutableRefObject<number> }) {
-  const gl = useThree((st) => st.gl);
-  const scene = useThree((st) => st.scene);
-  const camera = useThree((st) => st.camera) as THREE.PerspectiveCamera;
-  const size = useThree((st) => st.size);
-  const dpr = useThree((st) => st.viewport.dpr);
-
-  const { composer, bloom } = useMemo(() => {
-    const target = new THREE.WebGLRenderTarget(1, 1, {
-      type: THREE.HalfFloatType,
-      samples: 4,
-    });
-    const comp = new EffectComposer(gl, target);
-    comp.addPass(new RenderPass(scene, camera));
-    // Tight radius and a threshold above the lit sky: only lamp filaments and
-    // chrome highlights bloom. A wide radius here is indistinguishable from
-    // a soft-focus filter over the whole frame.
-    const glow = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.45, 0.32, 1.05);
-    comp.addPass(glow);
-    comp.addPass(new OutputPass());
-    return { composer: comp, bloom: glow };
-  }, [gl, scene, camera]);
-
-  useEffect(() => () => composer.dispose(), [composer]);
-
-  useEffect(() => {
-    composer.setPixelRatio(dpr);
-    composer.setSize(size.width, size.height);
-  }, [composer, size, dpr]);
-
-  useFrame(() => {
-    // Bloom earns its keep only once the lamps are the subject: near-nothing
-    // in the day-lit dock, strongest at the dusk yard.
-    const p = clamp01(progress.current);
-    bloom.strength = 0.08 + smooth(clamp01((p - 0.66) / 0.24)) * 0.26;
-    composer.render();
-  }, 1);
-
-  return null;
-}
-
 /** Soft contact shadow so the truck sits on the road rather than hovering. */
 function ContactShadow() {
   const tex = useDisposable(useMemo(
@@ -1230,96 +1282,19 @@ function ContactShadow() {
 
 /** Drop an exported truck here and the rig uses it instead of the primitive
     build below — same camera, same lighting, same wheel-spin source. */
-const TRUCK_GLB = "/models/truck.glb";
-
-/** True once the asset is confirmed to exist. Probed with HEAD rather than
-    imported, because a 404 inside useLoader throws into a canvas that has no
-    error boundary — this way a missing model degrades instead of blanking. */
-function useAsset(url: string) {
-  const [ok, setOk] = useState(false);
-  useEffect(() => {
-    let live = true;
-    void fetch(url, { method: "HEAD" })
-      .then((r) => {
-        if (live) setOk(r.ok);
-      })
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, [url]);
-  return ok;
-}
-
-/** The real model. Shadow flags and env intensity are forced on every mesh
-    because exporters rarely set them, and the logo is applied to whichever
-    material the exporter named for the flank livery. */
-function ModelTruck({
-  wheels,
-  quality,
-}: {
-  wheels: MutableRefObject<THREE.Group | null>;
-  quality: Quality;
-}) {
-  const gltf = useLoader(GLTFLoader, TRUCK_GLB);
-  const shared = useLogo();
-  // A clone, not the shared texture: glTF UVs need flipY off, and useLoader
-  // hands back one cached object per URL — setting it here would have turned
-  // every other decal in the scene upside down the moment a .glb appeared.
-  const logo = useMemo(() => shared.clone(), [shared]);
-  const model = useMemo(() => gltf.scene.clone(true), [gltf]);
-
-  useEffect(() => {
-    logo.flipY = false;
-    logo.needsUpdate = true;
-    model.traverse((o) => {
-      const m = o as THREE.Mesh;
-      if (!m.isMesh) return;
-      m.castShadow = m.receiveShadow = quality === "high";
-      const mat = m.material as THREE.MeshStandardMaterial | undefined;
-      if (!mat) return;
-      mat.envMapIntensity = 1.6;
-      if (/livery|decal|logo|brand/i.test(mat.name || o.name)) {
-        mat.map = logo;
-        mat.needsUpdate = true;
-      }
-    });
-
-    // Anything the exporter called a wheel joins the spin group, so the
-    // rig's distance-derived rotation drives the real model untouched.
-    // attach() rather than add() so world transforms survive the reparent.
-    const rig = wheels.current;
-    if (rig) {
-      const found: THREE.Object3D[] = [];
-      model.traverse((o) => {
-        if (/wheel|tyre|tire/i.test(o.name)) found.push(o);
-      });
-      for (const o of found) rig.attach(o);
-    }
-  }, [model, logo, quality, wheels]);
-
-  return (
-    <>
-      <ContactShadow />
-      <primitive object={model} />
-      <group ref={wheels} />
-    </>
-  );
-}
-
+/** Contact shadow + the primitive-built truck. There is no .glb path: the
+    scene ships no models, and the probe that used to look for one cost two
+    guaranteed 404s per mount plus GLTFLoader in the hero chunk. */
 function Truck(props: {
   wheels: MutableRefObject<THREE.Group | null>;
   doors: MutableRefObject<THREE.Group | null>;
   quality: Quality;
 }) {
-  const model = useAsset(TRUCK_GLB);
-  if (!model) return <BuiltTruck {...props} />;
-  // The primitive build is the fallback, so the hero never shows a hole
-  // while a multi-megabyte .glb streams in.
   return (
-    <Suspense fallback={<BuiltTruck {...props} />}>
-      <ModelTruck wheels={props.wheels} quality={props.quality} />
-    </Suspense>
+    <>
+      <ContactShadow />
+      <BuiltTruck {...props} />
+    </>
   );
 }
 
@@ -1944,22 +1919,6 @@ function Racking({
   );
 }
 
-const FORKLIFT_GLB = "/models/forklift.glb";
-
-/** Same optional-asset path as the truck: an exported forklift the moment
-    one exists at FORKLIFT_GLB, the primitive build until then. */
-function ModelForklift() {
-  const gltf = useLoader(GLTFLoader, FORKLIFT_GLB);
-  const model = useMemo(() => gltf.scene.clone(true), [gltf]);
-  useEffect(() => {
-    model.traverse((o) => {
-      const m = o as THREE.Mesh;
-      if (m.isMesh) m.castShadow = m.receiveShadow = true;
-    });
-  }, [model]);
-  return <primitive object={model} />;
-}
-
 function Forklift({
   body,
   carriage,
@@ -1967,16 +1926,9 @@ function Forklift({
   body: MutableRefObject<THREE.Group | null>;
   carriage: MutableRefObject<THREE.Group | null>;
 }) {
-  const model = useAsset(FORKLIFT_GLB);
   return (
     <group ref={body} position={[0, 0, -9]}>
-      {model ? (
-        <Suspense fallback={<BuiltForklift carriage={carriage} />}>
-          <ModelForklift />
-        </Suspense>
-      ) : (
-        <BuiltForklift carriage={carriage} />
-      )}
+      <BuiltForklift carriage={carriage} />
     </group>
   );
 }
@@ -4233,10 +4185,12 @@ function Port({
 function Rig({
   progress,
   quality,
+  dpr,
   onReady,
 }: {
   progress: MutableRefObject<number>;
   quality: Quality;
+  dpr: number;
   onReady?: () => void;
 }) {
   const painted = useRef(false);
@@ -4251,7 +4205,11 @@ function Rig({
   const cabin = useRef<THREE.PointLight>(null);
   const spill = useRef<THREE.Mesh>(null);
   const beams = useRef<THREE.Mesh>(null);
-  const lamps = useRef<THREE.Object3D | null>(null);
+  // Resolved once and cached as a flat list. This used to be a traverse() of
+  // the lamp subtree on every single frame — a tree walk plus a material
+  // lookup per node, 60 times a second, to write the same handful of
+  // emissiveIntensity values. The set never changes after the truck is built.
+  const lamps = useRef<Array<{ mat: THREE.MeshStandardMaterial; lit: number }> | null>(null);
   const lastZ = useRef(0);
   const lastRolled = useRef(0);
   // One velocity for the whole scene: camera shake, suspension load and
@@ -4266,6 +4224,7 @@ function Rig({
   const eased = useRef(0);
 
   useProceduralEnv();
+  const Effects = useEffectsChunk(quality === "high");
 
   // Render a window onto a wider virtual frustum. Everything the camera
   // frames shifts right, clearing the left column for the copy — without
@@ -4505,15 +4464,22 @@ function Rig({
     // the same beat as the streetlights and the yard rather than on its own
     // timer. Each emitter scales the intensity it was authored with.
     const dusk = smooth(clamp01((p - 0.74) / 0.12));
-    lamps.current ??= truck.current?.getObjectByName("lamps") ?? null;
+    if (lamps.current === null) {
+      const root = truck.current?.getObjectByName("lamps");
+      if (root) {
+        const found: Array<{ mat: THREE.MeshStandardMaterial; lit: number }> = [];
+        root.traverse((o) => {
+          const mesh = o as THREE.Mesh;
+          if (!mesh.isMesh) return;
+          const lit = mesh.userData.lit as number | undefined;
+          const mat = mesh.material as THREE.MeshStandardMaterial | undefined;
+          if (lit !== undefined && mat) found.push({ mat, lit });
+        });
+        lamps.current = found;
+      }
+    }
     if (lamps.current) {
-      lamps.current.traverse((o) => {
-        const mesh = o as THREE.Mesh;
-        if (!mesh.isMesh) return;
-        const lit = mesh.userData.lit as number | undefined;
-        const mat = mesh.material as THREE.MeshStandardMaterial | undefined;
-        if (lit !== undefined && mat) mat.emissiveIntensity = 0.3 + dusk * lit;
-      });
+      for (const l of lamps.current) l.mat.emissiveIntensity = 0.3 + dusk * l.lit;
     }
     if (beams.current) {
       const m = beams.current.material as THREE.MeshBasicMaterial;
@@ -4634,7 +4600,8 @@ function Rig({
       </Suspense>
 
       <PauseOffscreen />
-      {quality === "high" && <Effects progress={eased} />}
+      <AdaptiveResolution max={dpr} />
+      {Effects && <Effects progress={eased} />}
     </>
   );
 }
@@ -4674,20 +4641,25 @@ export default function HeroScene({
       // whole extra scene render every frame, and halving its size halves
       // nothing about that.
       shadows={quality === "high" ? "percentage" : false}
-      // MSAA on the default framebuffer is dead weight on a high-DPI screen:
-      // the device pixels are already smaller than the artefact it smooths,
-      // and it costs a multisampled backbuffer for the whole canvas. The
-      // high-quality path keeps its edges anyway — Effects renders into its
-      // own 4x-sampled target, which is where the antialiasing that matters
-      // actually happens.
-      gl={{ antialias: dpr < 1.5, powerPreference: "high-performance" }}
+      // Keyed to quality, not to pixel ratio.
+      //
+      // On the high path Effects renders the scene into its own multisampled
+      // target and then blits one fullscreen quad to the default framebuffer.
+      // A quad has no edges to smooth, so MSAA there antialiases nothing at
+      // all while still costing a multisampled backbuffer for the whole
+      // canvas — and the old `dpr < 1.5` test switched it *on* for exactly
+      // the machines least able to afford it (1x displays).
+      //
+      // The low path has no composer, so the default framebuffer is where its
+      // edges are resolved and it keeps MSAA.
+      gl={{ antialias: quality === "low", powerPreference: "high-performance" }}
       // far 400 clipped the far end of the route out of the wide
       // establishing shot while the fog band still ran to 700 — geometry
       // vanished at a hard plane instead of fading into the haze.
       camera={{ fov: 38, near: 0.5, far: 760, position: SHOTS[0].pos }}
       aria-hidden
     >
-      <Rig progress={progress} quality={quality} onReady={onReady} />
+      <Rig progress={progress} quality={quality} dpr={dpr} onReady={onReady} />
     </Canvas>
   );
 }

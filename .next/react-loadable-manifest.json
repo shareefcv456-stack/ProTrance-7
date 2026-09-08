@@ -1,10 +1,16 @@
 {
+  "components/home/HeroScene.tsx -> ./HeroEffects": {
+    "id": 6709,
+    "files": [
+      "static/chunks/709.d3640eff07317655.js"
+    ]
+  },
   "components/home/HomeHero.tsx -> ./HeroScene": {
     "id": 2363,
     "files": [
       "static/chunks/b536a0f1.1249f719d932f90b.js",
-      "static/chunks/980.201ef778d05853a7.js",
-      "static/chunks/363.2feef9067b187b20.js"
+      "static/chunks/514.38c47b4d3a73650c.js",
+      "static/chunks/363.fcf5ccb7805f133e.js"
     ]
   },
   "components/home/HomeHero.tsx -> gsap": {

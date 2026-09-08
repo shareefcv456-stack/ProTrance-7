@@ -28,7 +28,7 @@ export function CtaBand() {
             <span className="eyebrow text-signal">Ready When You Are</span>
           </Reveal>
           <Reveal delay={0.08}>
-            <h2 className="mx-auto mt-6 max-w-3xl font-display text-3xl font-900 uppercase leading-[1.02] tracking-tightest text-ink sm:text-5xl md:text-6xl">
+            <h2 className="mx-auto mt-6 max-w-3xl font-display text-[clamp(1.55rem,1.2rem+2.05vw,3rem)] font-900 uppercase leading-[1.06] tracking-tightest text-ink">
               Let&apos;s keep your shelves{" "}
               <span className="text-signal">stocked.</span>
             </h2>

@@ -43,7 +43,7 @@ export function FleetBand({
           <span className="eyebrow text-signal">{eyebrow}</span>
         </Reveal>
         <Reveal delay={0.08}>
-          <h2 className="mt-6 max-w-3xl font-display text-3xl font-900 uppercase leading-[1.02] tracking-tightest text-paper sm:text-5xl md:text-6xl">
+          <h2 className="mt-6 max-w-3xl font-display text-[clamp(1.55rem,1.2rem+2.05vw,3rem)] font-900 uppercase leading-[1.06] tracking-tightest text-paper">
             {title} {accent}
           </h2>
         </Reveal>

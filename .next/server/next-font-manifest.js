@@ -1,1 +1,1 @@
-self.__NEXT_FONT_MANIFEST='{"pages":{},"app":{"/Users/muhammedshareefcv/Desktop/pro-trance/ProTrance-7/app/layout":["static/media/558ca1a6aa3cb55e-s.p.woff2","static/media/4c9affa5bc8f420e-s.p.woff2","static/media/36966cca54120369-s.p.woff2"]},"appUsingSizeAdjust":true,"pagesUsingSizeAdjust":false}';
+self.__NEXT_FONT_MANIFEST='{"pages":{},"app":{"/Users/muhammedshareefcv/Desktop/rptotranse-7/ProTrance-7/app/layout":["static/media/4c9affa5bc8f420e-s.p.woff2","static/media/36966cca54120369-s.p.woff2"]},"appUsingSizeAdjust":true,"pagesUsingSizeAdjust":false}';

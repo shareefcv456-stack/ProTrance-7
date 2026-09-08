@@ -39,8 +39,8 @@ export function ClientsStrip() {
               aria-label="Nesto"
               className="mx-10 h-10 w-[84px] shrink-0 select-none bg-ink/40 transition-all duration-500 ease-smooth hover:scale-110 hover:bg-signal sm:mx-14 sm:h-12 sm:w-[100px]"
               style={{
-                WebkitMaskImage: "url('/logos/nesto.svg')",
-                maskImage: "url('/logos/nesto.svg')",
+                WebkitMaskImage: "url('/logos/nesto.png')",
+                maskImage: "url('/logos/nesto.png')",
                 WebkitMaskRepeat: "no-repeat",
                 maskRepeat: "no-repeat",
                 WebkitMaskPosition: "center",

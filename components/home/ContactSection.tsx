@@ -100,7 +100,7 @@ export function ContactSection() {
         {/* Channels */}
         <div>
           <Reveal>
-            <h2 className="max-w-md font-display text-3xl font-600 leading-[1.06] tracking-tighter text-ink sm:text-4xl md:text-[2.8rem]">
+            <h2 className="max-w-md font-display text-[clamp(1.5rem,1.15rem+2.1vw,2.8rem)] font-600 leading-[1.1] tracking-tighter text-ink">
               Talk to our dispatch desk.
             </h2>
             <p className="mt-5 max-w-md text-base leading-relaxed text-grey-600">

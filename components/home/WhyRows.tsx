@@ -53,7 +53,7 @@ export function WhyRows() {
   const reduce = useReducedMotion();
 
   return (
-    <section className="bg-[#101010] py-14 sm:py-20">
+    <section className="overflow-x-clip bg-[#101010] py-14 sm:py-20">
       <div className="shell">
         {/* Header */}
         <motion.span
@@ -70,7 +70,7 @@ export function WhyRows() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-15% 0px" }}
           transition={{ duration: 0.8, delay: 0.1, ease }}
-          className="mt-5 max-w-[720px] font-display text-[clamp(2rem,3.8vw,3rem)] font-600 uppercase leading-[1.08] tracking-tighter text-paper"
+          className="mt-5 max-w-[720px] font-display text-[clamp(1.5rem,1.15rem+2.1vw,3rem)] font-600 uppercase leading-[1.08] tracking-tighter text-paper"
         >
           A partner that speaks <span className="text-accent">FMCG.</span>
         </motion.h2>

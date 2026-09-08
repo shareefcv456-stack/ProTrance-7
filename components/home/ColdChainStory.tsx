@@ -77,12 +77,12 @@ export function ColdChainStory() {
   const reduce = useReducedMotion();
 
   return (
-    <section className="py-14 sm:py-20">
+    <section className="overflow-x-clip py-14 sm:py-20">
       <div className="shell grid items-center gap-14 lg:grid-cols-2">
         {/* Narrative */}
         <div>
           <Reveal>
-            <h2 className="max-w-lg font-display text-3xl font-600 leading-[1.06] tracking-tighter sm:text-4xl md:text-[2.8rem]">
+            <h2 className="max-w-lg font-display text-[clamp(1.5rem,1.15rem+2.1vw,2.8rem)] font-600 leading-[1.1] tracking-tighter">
               An unbroken cold chain, mile after mile.
             </h2>
           </Reveal>

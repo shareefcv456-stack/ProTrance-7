@@ -41,6 +41,13 @@ const config: Config = {
           soft: "#F5A75C",
           deep: "#C2660B",
         },
+        // Validation only. The palette's single accent is orange, which is
+        // also the CTA and the "this is good" colour — reusing it to mean
+        // "this field is wrong" would make the two indistinguishable.
+        danger: {
+          DEFAULT: "#C0392B",
+          soft: "#FBEBE9",
+        },
         cold: {
           DEFAULT: "#B4B4B4",
           soft: "#DADADA",

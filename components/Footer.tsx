@@ -15,6 +15,9 @@ export function Footer() {
               <img
                 src="/logo.png"
                 alt="PRO TRANS Logistics LLP"
+                width={440}
+                height={161}
+                decoding="async"
                 className="h-10 w-auto rounded-[4px]"
               />
             </Link>
@@ -28,12 +31,13 @@ export function Footer() {
           {/* Explore */}
           <div>
             <h3 className="font-display text-sm font-600 text-paper">Explore</h3>
-            <ul className="mt-5 space-y-3">
+            <ul className="mt-5 space-y-1.5">
               {nav.map((item) => (
                 <li key={item.href}>
                   <Link
                     href={item.href}
-                    className="text-sm text-grey-400 transition-colors duration-300 hover:text-accent"
+                    prefetch={false}
+                    className="inline-flex py-1 text-sm text-grey-400 transition-colors duration-300 hover:text-accent"
                   >
                     {item.label}
                   </Link>
@@ -45,12 +49,13 @@ export function Footer() {
           {/* Services */}
           <div>
             <h3 className="font-display text-sm font-600 text-paper">Services</h3>
-            <ul className="mt-5 space-y-3">
+            <ul className="mt-5 space-y-1.5">
               {footerServices.map((s) => (
                 <li key={s.id}>
                   <Link
                     href="/services"
-                    className="text-sm text-grey-400 transition-colors duration-300 hover:text-accent"
+                    prefetch={false}
+                    className="inline-flex py-1 text-sm text-grey-400 transition-colors duration-300 hover:text-accent"
                   >
                     {s.title}
                   </Link>
@@ -62,12 +67,12 @@ export function Footer() {
           {/* Contact */}
           <div>
             <h3 className="font-display text-sm font-600 text-paper">Reach us</h3>
-            <ul className="mt-5 space-y-3 text-sm">
+            <ul className="mt-5 space-y-1.5 text-sm">
               {company.phones.mobile.map((p) => (
                 <li key={p}>
                   <a
                     href={`tel:+91${p}`}
-                    className="text-grey-400 transition-colors duration-300 hover:text-accent"
+                    className="inline-flex py-1 text-grey-400 transition-colors duration-300 hover:text-accent"
                   >
                     +91 {p}
                   </a>
@@ -76,7 +81,7 @@ export function Footer() {
               <li>
                 <a
                   href={`mailto:${company.email}`}
-                  className="break-all text-grey-400 transition-colors duration-300 hover:text-accent"
+                  className="inline-flex break-all py-1 text-grey-400 transition-colors duration-300 hover:text-accent"
                 >
                   {company.email}
                 </a>

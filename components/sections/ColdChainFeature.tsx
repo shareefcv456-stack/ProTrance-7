@@ -95,7 +95,7 @@ function TempMonitor() {
 
       <div className="flex items-end justify-between">
         <div>
-          <div className="font-display text-5xl font-900 tracking-tighter text-ink">
+          <div className="font-display text-[clamp(2rem,1.6rem+1.1vw,2.75rem)] font-900 tracking-tighter text-ink">
             +4.2°C
           </div>
           <div className="mt-1 font-mono text-[0.62rem] uppercase tracking-widest text-ink/45">

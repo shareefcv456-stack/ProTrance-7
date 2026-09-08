@@ -6,9 +6,16 @@
   --shell-pad: clamp(1.25rem, 5vw, 4rem);
 }
 
-* {
+/* Inherited from body rather than set on `*`.
+   `text-rendering: optimizeLegibility` is dropped entirely: it forces kerning
+   and ligature lookups on every element it applies to, and applying it via
+   the universal selector made that every node on a page whose hero alone
+   holds several hundred. The default (`auto`) already enables kerning and
+   common ligatures in every browser this site targets, so the setting was
+   buying layout cost and no glyphs. */
+body {
   -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 html {
@@ -20,7 +27,6 @@ html {
 body {
   background: #fffcfc;
   color: #272727;
-  overflow-x: hidden;
   scrollbar-width: none;
 }
 

@@ -69,7 +69,7 @@ export function ServiceRows() {
         <Reveal>
           <div className="max-w-[650px]">
             <span className="eyebrow text-accent-deep">What we move</span>
-            <h2 className="mt-5 font-display text-3xl font-600 leading-[1.06] tracking-tighter sm:text-4xl md:text-[2.8rem]">
+            <h2 className="mt-5 font-display text-[clamp(1.5rem,1.15rem+2.1vw,2.8rem)] font-600 leading-[1.1] tracking-tighter">
               Built for the pace of fast-moving goods.
             </h2>
             <p className="mt-5 text-base leading-relaxed text-grey-600 sm:text-lg">

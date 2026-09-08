@@ -99,11 +99,11 @@ export default function AboutPage() {
                   { k: "HQ", v: "Malappuram" },
                   { k: "Reach", v: "Pan-India" },
                 ].map((f) => (
-                  <div key={f.k} className="bg-white/70 p-4">
+                  <div key={f.k} className="bg-white/70 p-3 sm:p-4">
                     <dt className="font-mono text-[0.55rem] uppercase tracking-widest text-ink/40">
                       {f.k}
                     </dt>
-                    <dd className="mt-1 font-display text-base font-800 tracking-tight text-ink">
+                    <dd className="mt-1 font-display text-sm font-800 tracking-tight text-ink sm:text-base">
                       {f.v}
                     </dd>
                   </div>

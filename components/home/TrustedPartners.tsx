@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { motion, useReducedMotion } from "framer-motion";
 import { Reveal } from "@/components/motion/Reveal";
@@ -13,20 +13,20 @@ const pairs = [
     category: "Retail",
     name: "NESTO Hypermarkets",
     // Official asset is a white knockout; inverted to read on the paper face.
-    logo: { src: "/logos/nesto.svg", className: "h-12 invert sm:h-14" },
+    logo: { src: "/logos/nesto.png", w: 465, h: 222, className: "h-12 invert sm:h-14" },
     text: "Managing high-volume retail logistics for one of the fastest-growing retail chains.",
   },
   {
     category: "Craze Biscuits",
     name: "AZCCO Global Venture",
     // Official asset is white-on-transparent; inverted to read on the paper face.
-    logo: { src: "/logos/azcco.png", className: "h-9 invert sm:h-11" },
+    logo: { src: "/logos/azcco.png", w: 216, h: 70, className: "h-9 invert sm:h-11" },
     text: "Timely distribution of confectionery products across the network.",
   },
   {
     category: "Dairy Federation",
     name: "MILMA",
-    logo: { src: "/logos/milma.svg", className: "h-[72px] sm:h-[88px]" },
+    logo: { src: "/logos/milma.svg", w: 263, h: 177, className: "h-[72px] sm:h-[88px]" },
     text: "Trusted handling of sensitive dairy products requiring strict timeline adherence.",
   },
 ];
@@ -53,7 +53,7 @@ function PartnerFace({
 }: {
   category: string;
   name: string;
-  logo: { src: string; className: string };
+  logo: { src: string; w: number; h: number; className: string };
   back?: boolean;
 }) {
   return (
@@ -67,6 +67,10 @@ function PartnerFace({
       <img
         src={logo.src}
         alt={name}
+        width={logo.w}
+        height={logo.h}
+        loading="lazy"
+        decoding="async"
         className={`mt-3 w-auto max-w-full self-start object-contain object-left ${logo.className}`}
       />
     </div>
@@ -88,20 +92,50 @@ function TextFace({ text, back }: { text: string; back?: boolean }) {
 export function TrustedPartners() {
   const reduce = useReducedMotion();
   const [flipped, setFlipped] = useState(false);
+  const section = useRef<HTMLElement>(null);
 
+  // The flip runs on a timer, and a timer does not care whether anyone can
+  // see it: unguarded, six cards in `preserve-3d` were re-composited every
+  // five seconds for the whole life of the page, including the entire time
+  // the WebGL hero is on screen competing for the same GPU. The observer
+  // costs one callback per crossing and stops the interval the rest of the
+  // time. The animation itself is untouched.
   useEffect(() => {
-    const id = setInterval(() => setFlipped((f) => !f), 5000);
-    return () => clearInterval(id);
+    const el = section.current;
+    if (!el) return;
+    let id: ReturnType<typeof setInterval> | undefined;
+    const io = new IntersectionObserver(
+      ([e]) => {
+        if (e.isIntersecting && id === undefined) {
+          id = setInterval(() => setFlipped((f) => !f), 5000);
+        } else if (!e.isIntersecting && id !== undefined) {
+          clearInterval(id);
+          id = undefined;
+        }
+      },
+      { rootMargin: "150px" },
+    );
+    io.observe(el);
+    return () => {
+      io.disconnect();
+      if (id !== undefined) clearInterval(id);
+    };
   }, []);
 
   return (
-    <section className="relative py-12 sm:py-16">
+    <section ref={section} className="relative py-12 sm:py-16">
+      {/* Same photograph as the hero, and deliberately the same `sizes` and
+          `quality`: that resolves to the identical /_next/image URL, so this
+          full-bleed backdrop is a cache hit rather than a second download of
+          a 100vw photo. It also sits under bg-ink/80, where nothing finer
+          would survive anyway. */}
       <Image
-        src="/image.png"
+        src="/hero.jpg"
         alt=""
         aria-hidden
         fill
-        sizes="100vw"
+        quality={68}
+        sizes="(min-width: 1400px) 1320px, 100vw"
         className="object-cover"
       />
       {/* Dark overlay for text legibility over the photo */}
@@ -155,7 +189,7 @@ export function TrustedPartners() {
         <div className="lg:ml-auto lg:max-w-[480px] lg:text-right">
           <Reveal>
             <span className="eyebrow text-accent">Trusted partners</span>
-            <h2 className="mt-5 font-display text-3xl font-600 leading-[1.06] tracking-tighter text-paper sm:text-4xl md:text-[2.8rem]">
+            <h2 className="mt-5 font-display text-[clamp(1.5rem,1.15rem+2.1vw,2.8rem)] font-600 leading-[1.1] tracking-tighter text-paper">
               Moving cargo for the brands India shops for.
             </h2>
             <p className="mt-5 text-base leading-relaxed text-grey-400">

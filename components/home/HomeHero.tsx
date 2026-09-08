@@ -216,10 +216,28 @@ export function HomeHero() {
   const [painted, setPainted] = useState(false);
   // The scene chunk is ~363k of three.js, GSAP and addons, and next/dynamic
   // requests it the moment the component renders — in parallel with the very
-  // image the LCP is measured on. Holding it until the poster has decoded
-  // costs the 3D nothing perceptible (it needs a second to build the scene
-  // regardless) and takes the whole download off the critical path.
+  // image the LCP is measured on. Deferring it takes the whole download off
+  // the critical path.
+  //
+  // But *only* deferring it is what made the hero take nine seconds to
+  // appear: gating on the poster's onLoad alone put 668k of three.js strictly
+  // behind a full image round-trip, so a slow poster (or a cold image
+  // optimizer) held the 3D hostage for its entire duration. Whichever lands
+  // first now releases the scene — the poster, or the first idle slot after
+  // paint, with a hard 700ms ceiling so a busy main thread cannot stall it
+  // either. On a fast connection the poster still wins and nothing changes;
+  // on a slow one the two now overlap instead of queueing.
   const [poster, setPoster] = useState(false);
+  const releaseScene = useCallback(() => setPoster(true), []);
+  useEffect(() => {
+    const ric = window.requestIdleCallback;
+    if (!ric) {
+      const t = window.setTimeout(releaseScene, 300);
+      return () => window.clearTimeout(t);
+    }
+    const id = ric(releaseScene, { timeout: 700 });
+    return () => window.cancelIdleCallback(id);
+  }, [releaseScene]);
   // Resolved in an effect rather than at render, so the server and the first
   // client pass agree and hydration stays quiet.
   const [phone, setPhone] = useState(false);
@@ -317,7 +335,7 @@ export function HomeHero() {
                 at an edge. */}
             <div className="absolute inset-0 overflow-hidden">
               <Image
-                src="/image.png"
+                src="/hero.jpg"
                 alt="A PRO TRANS container truck at a port terminal, dock crew loading beside stacked shipping containers"
                 fill
                 priority
@@ -326,10 +344,10 @@ export function HomeHero() {
                 // LCP element, so the bytes are the metric.
                 quality={68}
                 sizes="(min-width: 1400px) 1320px, 100vw"
-                onLoad={() => setPoster(true)}
+                onLoad={releaseScene}
                 // A poster that 404s must not also cost the 3D — this gate
                 // is a scheduling hint, not a dependency.
-                onError={() => setPoster(true)}
+                onError={releaseScene}
                 className={`object-cover object-[62%_center] transition-opacity duration-700 ${
                   painted ? "opacity-0" : "opacity-100"
                 }`}
@@ -347,9 +365,15 @@ export function HomeHero() {
             </div>
 
 
-            {/* Chapter index */}
+            {/* Chapter index.
+
+                Cleared below the fixed navbar at every width. The bar is 16px
+                from the top and 64px tall above sm, so `sm:top-6` (24px) ran
+                the "01 Warehouse" and "02 In Transit" rows straight through
+                the back of it — visible in any screenshot of the desktop
+                hero. 5.5rem clears the 80px with room to breathe. */}
             {showScene && (
-              <div className="absolute right-4 top-[4.6rem] z-10 flex flex-col items-end gap-1 sm:right-6 sm:top-6">
+              <div className="absolute right-4 top-[4.6rem] z-10 flex flex-col items-end gap-1 sm:right-6 sm:top-[5.5rem]">
                 {chapters.map((c, i) => (
                   <ChapterTick key={c.label} index={i} progress={eased} />
                 ))}
@@ -469,6 +493,13 @@ export function HomeHero() {
               >
                 <Link
                   href="/contact"
+                  // Both CTAs sit in the viewport from the first paint, so Next
+                  // pulls their route chunk and RSC payload while the hero's
+                  // three.js is still streaming — 51k competing with the one
+                  // download the visitor is actually waiting to see. They are
+                  // static pages; fetching them on click costs a few hundred
+                  // ms once, against a slower hero for everybody.
+                  prefetch={false}
                   className="group inline-flex items-center gap-2.5 rounded-lg bg-accent px-7 py-3.5 text-sm font-semibold text-ink transition-all duration-300 ease-smooth hover:bg-paper active:scale-[0.98]"
                 >
                   Contact us
@@ -489,6 +520,7 @@ export function HomeHero() {
                 </Link>
                 <Link
                   href="/services"
+                  prefetch={false}
                   className="inline-flex items-center rounded-lg border border-white/30 px-7 py-3.5 text-sm font-semibold text-white transition-colors duration-300 ease-smooth hover:border-white/70 hover:bg-white/[0.06]"
                 >
                   Explore services
