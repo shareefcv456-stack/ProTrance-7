@@ -146,6 +146,16 @@ const MOODS: Array<{
   { fog: "#454c60", key: "#9db1cd", keyI: 1.3, amb: 0.52, ambCol: "#69748c", rim: 1.5, fogN: 60, fogF: 320, sky: 0.4, sun: [-30, 10, -2] },
 ];
 
+/** Anisotropic filtering for every texture built below, set once instead of
+    per-map. Almost everything here is read at a grazing angle — the road
+    under the camera, container flanks, chain-link, tyre tread — and that is
+    precisely where plain trilinear mipmapping smears a surface into a blur
+    band. Sampling cost only applies to the pixels that are actually oblique,
+    which is why this buys sharpness for close to nothing. 8 rather than the
+    hardware maximum: past 8 the difference is unmeasurable on this content
+    and some drivers charge for 16 on every fetch. */
+THREE.Texture.DEFAULT_ANISOTROPY = 8;
+
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 const smooth = (t: number) => t * t * (3 - 2 * t);
 const wrap = (v: number, n: number) => ((v % n) + n) % n;
@@ -1331,11 +1341,15 @@ function BuiltTruck({
         <Rounded w={2.6} h={2.85} d={7.3} r={0.09} />
         <meshPhysicalMaterial
           color={WHITE}
-          roughness={0.42}
+          roughness={0.34}
           metalness={0.08}
-          clearcoat={0.55}
-          clearcoatRoughness={0.28}
-          envMapIntensity={0.9}
+          clearcoat={0.7}
+          // Was rougher than the base coat underneath it, which is backwards:
+          // a lacquer is the smoothest layer on the vehicle. At 0.28 the
+          // horizon band in the environment smeared into a grey wash and the
+          // flank read as primer.
+          clearcoatRoughness={0.14}
+          envMapIntensity={1.25}
         />
       </mesh>
       {/* Body ribs + skirt */}
@@ -1622,10 +1636,15 @@ function BuiltTruck({
                   <cylinderGeometry args={[0.72, 0.72, 0.4, quality === "high" ? 22 : 10]} />
                   <meshStandardMaterial
                     color="#141518"
-                    roughness={1}
+                    // Not a perfect 1: real rubber holds a broad sheen along
+                    // the shoulder, and at roughness 1 with no environment
+                    // the tyre renders as an unlit black hole in the
+                    // bodywork — the tread relief has nothing to catch.
+                    roughness={0.82}
                     metalness={0}
+                    envMapIntensity={0.4}
                     normalMap={rubber}
-                    normalScale={new THREE.Vector2(1.4, 1.4)}
+                    normalScale={new THREE.Vector2(1.5, 1.5)}
                   />
                 </mesh>
                 {/* Only the outer tyre of a pair shows a rim. */}
@@ -1678,14 +1697,17 @@ function glass(quality: Quality, tint: string, opacity: number) {
   return quality === "high"
     ? {
         color: tint,
-        roughness: 0.1,
+        roughness: 0.04,
         metalness: 0,
-        transmission: 0.9,
-        thickness: 0.4,
+        transmission: 0.92,
+        // 0.4 was over a centimetre of glass at this scale; the tint stacked
+        // up through it until the windscreen read as smoked. Real laminate
+        // is ~6mm, and thinner glass is what lets the cab interior show.
+        thickness: 0.06,
         ior: 1.52,
         clearcoat: 1,
         clearcoatRoughness: 0.02,
-        envMapIntensity: 3.2,
+        envMapIntensity: 3.6,
       }
     : {
         color: tint,
@@ -4629,9 +4651,20 @@ export default function HeroScene({
   // and scales with the square of this: dpr 2 is 1.8x the fragments of 1.5,
   // and dpr 3 is four times them, for a difference nobody resolves on a
   // moving background render. This is the single biggest fill-rate lever.
+  //
+  // The high path is allowed 1.75 rather than 1.5 — this is the only lever
+  // that actually sharpens edges, since the composer's 2-sample MSAA target
+  // is doing the antialiasing and cannot be widened cheaply. It is a
+  // ceiling, not a setting: AdaptiveResolution below starts here and steps
+  // down within half a second on anything that cannot hold 45fps, so the
+  // machines that can afford the pixels get them and the rest are exactly
+  // where they were.
   const dpr = useMemo(
-    () => (typeof window === "undefined" ? 1 : Math.min(window.devicePixelRatio, 1.5)),
-    [],
+    () =>
+      typeof window === "undefined"
+        ? 1
+        : Math.min(window.devicePixelRatio, quality === "high" ? 1.75 : 1.5),
+    [quality],
   );
 
   return (
@@ -4640,7 +4673,12 @@ export default function HeroScene({
       // Shadows off on mobile, not merely lower-resolution: the map is a
       // whole extra scene render every frame, and halving its size halves
       // nothing about that.
-      shadows={quality === "high" ? "percentage" : false}
+      // "soft" (PCFSoft) rather than "percentage": same four taps, but the
+      // filter widens with distance from the occluder, so the trailer's
+      // shadow is crisp where the tyres meet the tarmac and soft twenty
+      // metres out. A uniform-width penumbra is one of the strongest
+      // "this is a game" tells there is.
+      shadows={quality === "high" ? "soft" : false}
       // Keyed to quality, not to pixel ratio.
       //
       // On the high path Effects renders the scene into its own multisampled
@@ -4652,7 +4690,19 @@ export default function HeroScene({
       //
       // The low path has no composer, so the default framebuffer is where its
       // edges are resolved and it keeps MSAA.
-      gl={{ antialias: quality === "low", powerPreference: "high-performance" }}
+      gl={{
+        antialias: quality === "low",
+        powerPreference: "high-performance",
+        // Khronos PBR Neutral instead of R3F's default ACES. ACES was built
+        // to grade film negatives and it desaturates anything bright toward
+        // white — under it the red cab washed pink in the sun and the
+        // sodium floodlights went cream. Neutral holds hue right up to the
+        // clip point and rolls off only the last stop, which is what keeps
+        // the contrast cinematic without turning the paint into a colour it
+        // is not. Exposure carries the small brightness the swap costs.
+        toneMapping: THREE.NeutralToneMapping,
+        toneMappingExposure: 1.06,
+      }}
       // far 400 clipped the far end of the route out of the wide
       // establishing shot while the fog band still ran to 700 — geometry
       // vanished at a hard plane instead of fading into the haze.

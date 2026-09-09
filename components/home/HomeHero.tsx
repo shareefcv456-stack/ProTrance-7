@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import Image from "next/image";
 import {
   AnimatePresence,
   motion,
@@ -210,23 +209,15 @@ export function HomeHero() {
   // driver, which would land on top of the scene's own damping and make the
   // camera mushy. This smooths only the readers.
   const eased = useSpring(scroll, { stiffness: 140, damping: 32, mass: 0.4 });
-  // The poster holds until the canvas has drawn a real frame. Fading on a
-  // timer instead meant a slow GPU showed an empty canvas washing over the
-  // photograph — the one moment the photograph is doing all the work.
+  // The gradient backdrop holds until the canvas has drawn a real frame.
+  // Fading on a timer instead meant a slow GPU washed an empty canvas over
+  // the backdrop before there was anything in it.
   const [painted, setPainted] = useState(false);
   // The scene chunk is ~363k of three.js, GSAP and addons, and next/dynamic
-  // requests it the moment the component renders — in parallel with the very
-  // image the LCP is measured on. Deferring it takes the whole download off
-  // the critical path.
-  //
-  // But *only* deferring it is what made the hero take nine seconds to
-  // appear: gating on the poster's onLoad alone put 668k of three.js strictly
-  // behind a full image round-trip, so a slow poster (or a cold image
-  // optimizer) held the 3D hostage for its entire duration. Whichever lands
-  // first now releases the scene — the poster, or the first idle slot after
-  // paint, with a hard 700ms ceiling so a busy main thread cannot stall it
-  // either. On a fast connection the poster still wins and nothing changes;
-  // on a slow one the two now overlap instead of queueing.
+  // requests it the moment the component renders — ahead of the copy, the
+  // fonts and the routes below. Releasing it on the first idle slot after
+  // paint takes the whole download off the critical path, with a hard 700ms
+  // ceiling so a busy main thread cannot stall it either.
   const [poster, setPoster] = useState(false);
   const releaseScene = useCallback(() => setPoster(true), []);
   useEffect(() => {
@@ -328,30 +319,17 @@ export function HomeHero() {
         {/* Hero module — inset rounded image panel */}
         <div className="relative">
           <div className="relative h-screen min-h-[650px] overflow-hidden bg-ink">
-            {/* Scroll-driven WebGL scene. The photograph is the poster until
-                the canvas paints, and is the whole of the reduced-motion
-                experience — then it fades out entirely, so there is no second
-                background layer left underneath that could ever show through
-                at an edge. */}
-            <div className="absolute inset-0 overflow-hidden">
-              <Image
-                src="/hero.jpg"
-                alt="A PRO TRANS container truck at a port terminal, dock crew loading beside stacked shipping containers"
-                fill
-                priority
-                // 2.1MB of source PNG behind a black scrim at 40-85% opacity.
-                // Nothing here survives that at full quality, and this is the
-                // LCP element, so the bytes are the metric.
-                quality={68}
-                sizes="(min-width: 1400px) 1320px, 100vw"
-                onLoad={releaseScene}
-                // A poster that 404s must not also cost the 3D — this gate
-                // is a scheduling hint, not a dependency.
-                onError={releaseScene}
-                className={`object-cover object-[62%_center] transition-opacity duration-700 ${
-                  painted ? "opacity-0" : "opacity-100"
-                }`}
-              />
+            {/* Scroll-driven WebGL scene. There is no poster photograph —
+                the hero is the 3D scene and nothing else.
+
+                What sits under it until the first frame paints is a CSS
+                gradient, and its stops are the scene's own sky gradient from
+                useProceduralEnv: blue zenith, hazy horizon band, dark ground.
+                Behind the scrim that reads as an out-of-focus sky, and when
+                the canvas fades in it is fading onto approximately the
+                colours already there — so the hand-off is the scene
+                resolving rather than one image replacing another. */}
+            <div className="absolute inset-0 overflow-hidden bg-[linear-gradient(180deg,#3f6fae_0%,#8fb0cd_30%,#d6dde0_44%,#f3ecdf_50%,#9c8f7e_56%,#3a332b_100%)]">
               {showScene && poster && (
                 <motion.div
                   className="absolute inset-0"
@@ -529,26 +507,35 @@ export function HomeHero() {
 
               {/* Service cards — one horizontal row pinned under the CTA
                   group, so the canvas centre stays clear of UI. */}
-              {/* A snap rail below sm, a grid above it. Three cards squeezed
-                  into a 360px row leaves each one 100px wide, which is not a
-                  card — it is a truncated label. Scrolling keeps them
-                  readable at full size. The negative margin lets the rail
-                  bleed to the panel edge so the last card does not look
-                  clipped by the padding. */}
-              <div
-                className="-mx-7 flex snap-x snap-mandatory gap-3 overflow-x-auto px-7 pt-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:ml-auto sm:grid sm:max-w-[620px] sm:grid-cols-3 sm:gap-4 sm:overflow-visible sm:px-0 sm:pt-10"
-              >
+              {/* A vertical stack below sm, the same three-column grid at sm
+                  and up.
+
+                  This was a horizontal snap rail with `min-w-[58%]` cards,
+                  and that is what did not fit: at 430px the row measured
+                  731px against a 430px box, so two of the three cards were
+                  parked off-screen behind a sideways scroll nobody knows to
+                  perform. Squeezing three columns into a 320px screen is not
+                  the alternative either — 82px is a truncated label, not a
+                  card. Stacking is the only arrangement where all three are
+                  visible at once *and* full-width, and going full-width is
+                  what pays for the extra rows: the icon moves beside the
+                  text instead of above it, so a stacked card is 56px tall
+                  rather than 129px. */}
+              {/* pb-0 below sm and gap-1 rather than gap-1.5: the last 5px
+                  of the budget, taken out of dead space instead of out of
+                  the type. The column already carries pb-8 underneath. */}
+              <div className="flex flex-col gap-1 pt-1 pb-0 sm:ml-auto sm:grid sm:max-w-[620px] sm:grid-cols-3 sm:gap-4 sm:pb-1 sm:pt-10">
                 {chips.map((chip, i) => (
                   <motion.div
                     key={chip.title}
                     initial={reduce ? undefined : { opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.65, delay: 0.85 + i * 0.12, ease }}
-                    className="flex min-w-[58%] shrink-0 snap-start flex-col rounded-2xl border border-white/20 bg-white/[0.10] p-4 shadow-[0_8px_32px_-12px_rgba(0,0,0,0.6)] backdrop-blur-md sm:min-w-0 sm:shrink sm:p-5"
+                    className="flex flex-row items-center gap-2.5 rounded-2xl border border-white/20 bg-white/[0.10] p-2 shadow-[0_8px_32px_-12px_rgba(0,0,0,0.6)] backdrop-blur-md sm:flex-col sm:items-stretch sm:gap-0 sm:p-5"
                   >
-                    <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/10 text-accent">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 text-accent sm:h-10 sm:w-10">
                       <svg
-                        className="h-5 w-5"
+                        className="h-4 w-4 sm:h-5 sm:w-5"
                         viewBox="0 0 24 24"
                         fill="none"
                         stroke="currentColor"
@@ -557,12 +544,21 @@ export function HomeHero() {
                         {chip.icon}
                       </svg>
                     </span>
-                    <span className="mt-3 block font-display text-sm font-600 leading-snug text-paper sm:mt-4">
-                      {chip.title}
-                    </span>
-                    <span className="mt-1 block text-xs leading-relaxed text-grey-300">
-                      {chip.body}
-                    </span>
+                    {/* `sm:contents` dissolves this wrapper at sm and up, so
+                        the title and body become direct children of the card
+                        again and the desktop box is the same three-child
+                        flex column it always was — no extra element in its
+                        layout, nothing to re-tune. Below sm it is the text
+                        block sitting beside the icon. min-w-0 lets it shrink
+                        so long body copy wraps instead of widening the row. */}
+                    <div className="min-w-0 sm:contents">
+                      <span className="block font-display text-[13px] font-600 leading-snug text-paper sm:mt-4 sm:text-sm">
+                        {chip.title}
+                      </span>
+                      <span className="mt-0.5 block text-[11px] leading-tight text-grey-300 sm:mt-1 sm:text-xs sm:leading-relaxed">
+                        {chip.body}
+                      </span>
+                    </div>
                   </motion.div>
                 ))}
               </div>
