@@ -17,6 +17,18 @@ import { StaggerText } from "@/components/motion/StaggerText";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
+/** 154 bytes of the first frame, blurred, carried inline in the HTML.
+ *
+ * The poster below is 33kB and needs its own request: on the 3G profile the
+ * round trip put the truck on screen at ~1.25s. This costs no request at
+ * all — it arrives with the markup, so it paints as soon as the hero does
+ * and the composition (dark dock left, sky right, apron below) is there
+ * while the real poster is still in flight. The gradient it sits on is the
+ * scene's own sky, so the two agree and the hand-off is a sharpening rather
+ * than a change of picture, not a jump to a different image. */
+const LQIP =
+  "data:image/webp;base64,UklGRpIAAABXRUJQVlA4IIYAAAAQBQCdASogABQAPt1cp0yopSOiMBgMARAbiWUAwoA0gVWKKZs9XtT7u4kycaYyqEBAAPulyxnyxvev5EJ9BJLce8oo5NPAZPNQGcZR0ctLcHqHVdkAnjFsDUOGZTNqaJJar56sTVFD7HkS2DdirLnxv/p3HK05o+DeFz/dRVgXZpDurHAAAA==";
+
 const HeroScene = dynamic(() => import("./HeroScene"), { ssr: false });
 
 /** Serve phones the poster instead of the WebGL hero.
@@ -213,22 +225,21 @@ export function HomeHero() {
   // Fading on a timer instead meant a slow GPU washed an empty canvas over
   // the backdrop before there was anything in it.
   const [painted, setPainted] = useState(false);
-  // The scene chunk is ~363k of three.js, GSAP and addons, and next/dynamic
-  // requests it the moment the component renders — ahead of the copy, the
-  // fonts and the routes below. Releasing it on the first idle slot after
-  // paint takes the whole download off the critical path, with a hard 700ms
-  // ceiling so a busy main thread cannot stall it either.
-  const [poster, setPoster] = useState(false);
-  const releaseScene = useCallback(() => setPoster(true), []);
-  useEffect(() => {
-    const ric = window.requestIdleCallback;
-    if (!ric) {
-      const t = window.setTimeout(releaseScene, 300);
-      return () => window.clearTimeout(t);
-    }
-    const id = ric(releaseScene, { timeout: 700 });
-    return () => window.cancelIdleCallback(id);
-  }, [releaseScene]);
+  // The scene chunk is requested as soon as this mounts, rather than on the
+  // first idle slot.
+  //
+  // It used to wait for requestIdleCallback (700ms ceiling), which kept the
+  // three.js download off the critical path — correct when the only thing
+  // behind the canvas was a bare CSS gradient, because nothing was waiting
+  // on it to look finished. Measured against a throttled connection that
+  // deferral was part of a 1.2s wait on 4G and 3.9s on 3G during which the
+  // hero was an empty sky: the scene is the above-the-fold subject, so the
+  // page looked broken for the whole of it.
+  //
+  // The poster below now covers that window with the real first frame, so
+  // the visitor never waits on an empty hero either way — and with the gap
+  // covered, the right move for the remaining time is to start the download
+  // sooner, not later.
   // Resolved in an effect rather than at render, so the server and the first
   // client pass agree and hydration stays quiet.
   const [phone, setPhone] = useState(false);
@@ -329,8 +340,58 @@ export function HomeHero() {
                 the canvas fades in it is fading onto approximately the
                 colours already there — so the hand-off is the scene
                 resolving rather than one image replacing another. */}
-            <div className="absolute inset-0 overflow-hidden bg-[linear-gradient(180deg,#3f6fae_0%,#8fb0cd_30%,#d6dde0_44%,#f3ecdf_50%,#9c8f7e_56%,#3a332b_100%)]">
-              {showScene && poster && (
+            <div
+              className="absolute inset-0 overflow-hidden bg-[linear-gradient(180deg,#3f6fae_0%,#8fb0cd_30%,#d6dde0_44%,#f3ecdf_50%,#9c8f7e_56%,#3a332b_100%)]"
+              // Both layers named here on purpose. An inline background-image
+              // replaces the class's outright rather than stacking with it,
+              // and the thumbnail is opaque, so the gradient would be dead
+              // weight if it were only in the class. Declaring it as the
+              // lower layer keeps it as the fallback that actually paints if
+              // the data URI ever fails to decode.
+              style={{
+                backgroundImage: `url("${LQIP}"), linear-gradient(180deg,#3f6fae 0%,#8fb0cd 30%,#d6dde0 44%,#f3ecdf 50%,#9c8f7e 56%,#3a332b 100%)`,
+                backgroundSize: "cover, cover",
+                backgroundPosition: "center, center",
+              }}
+            >
+              {/* First frame of the scene as a static image, behind the
+                  canvas and in the initial HTML so the preload scanner finds
+                  it immediately. 33kB desktop / 19kB mobile of WebP — about
+                  165ms on the 3G profile that waits 3.9s for the canvas.
+
+                  Two files rather than one scaled: the camera framing at
+                  p = 0 is a landscape composition with the truck right of
+                  centre, and object-cover cropping that to a 0.46 aspect
+                  phone screen throws the truck off the frame. `picture`
+                  picks one and downloads only that.
+
+                  Rendered even when `showScene` is false, which is the
+                  reduced-motion case: a still of the dock is a better answer
+                  there than a bare gradient, and it is already static.
+
+                  aria-hidden with an empty alt: the canvas it stands in for
+                  is aria-hidden too, and the headline beside it already
+                  carries the meaning. */}
+              <picture>
+                <source
+                  media="(max-width: 767px)"
+                  srcSet="/hero-poster-mobile.webp"
+                  width={760}
+                  height={1645}
+                />
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/hero-poster.webp"
+                  alt=""
+                  aria-hidden="true"
+                  width={1600}
+                  height={1000}
+                  fetchPriority="high"
+                  decoding="async"
+                  className="absolute inset-0 h-full w-full object-cover"
+                />
+              </picture>
+              {showScene && (
                 <m.div
                   className="absolute inset-0"
                   initial={{ opacity: 0 }}
