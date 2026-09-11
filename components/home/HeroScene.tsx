@@ -981,6 +981,76 @@ function useRubber() {
   }, []));
 }
 
+/** Rim face: spokes, a bolt circle and a recessed hub cap, as a normal map.
+
+    The rim was two silver discs — the outer one plain, the inner one a
+    slightly darker plain one. At the dock beat the camera is close enough
+    to read them, and a pair of flat circles is exactly the "geometric
+    cylinder" tell the bodywork no longer has.
+
+    A texture rather than geometry, and that is the whole point: spokes
+    modelled as meshes would be ten rims times six spokes plus eight bolts
+    of extra draw calls on a scene that already holds its frame budget
+    carefully. This is one 256px canvas, generated once, shared by every
+    wheel, and it costs nothing per frame. Same trick the tread, the
+    corrugation and the asphalt already use here.
+
+    Drawn into the disc three.js maps a cylinder cap to — centred, radius
+    half the texture — so the pattern lands concentric with the wheel. */
+function useRimFace() {
+  return useDisposable(useMemo(() => {
+    const SZ = 256;
+    const c = document.createElement("canvas");
+    c.width = SZ;
+    c.height = SZ;
+    const ctx = c.getContext("2d");
+    if (!ctx) return null;
+    const mid = SZ / 2;
+
+    // Mid grey is "flat" for a height field: the sobel pass reads deviation
+    // from it, so anything left at this value stays a plain surface.
+    ctx.fillStyle = "#808080";
+    ctx.fillRect(0, 0, SZ, SZ);
+
+    // Outer lip, proud of the face.
+    ctx.strokeStyle = "#d8d8d8";
+    ctx.lineWidth = 9;
+    ctx.beginPath();
+    ctx.arc(mid, mid, mid * 0.9, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Six lightening holes between the bolts. A truck rim is mostly the
+    // holes — leaving them out is what makes one read as a hubcap.
+    ctx.fillStyle = "#3a3a3a";
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
+      ctx.beginPath();
+      ctx.ellipse(mid + Math.cos(a) * mid * 0.52, mid + Math.sin(a) * mid * 0.52,
+                  mid * 0.2, mid * 0.14, a, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Bolt circle, proud.
+    ctx.fillStyle = "#ececec";
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.arc(mid + Math.cos(a) * mid * 0.3, mid + Math.sin(a) * mid * 0.3, mid * 0.055, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Recessed hub cap in the middle.
+    ctx.fillStyle = "#5a5a5a";
+    ctx.beginPath();
+    ctx.arc(mid, mid, mid * 0.17, 0, Math.PI * 2);
+    ctx.fill();
+
+    const nrm = sobelNormal(c, SZ, 150);
+    if (!nrm) return null;
+    return new THREE.CanvasTexture(nrm);
+  }, []));
+}
+
 /** One soft round sprite, shared by every particle system on the page. */
 function useMote() {
   return useDisposable(useMemo(
@@ -1319,6 +1389,83 @@ function BuiltTruck({
 }) {
   const logo = useLogo();
   const rubber = useRubber();
+  const rimFace = useRimFace();
+
+  /* Wheel materials, built once and shared by all sixteen.
+
+     They used to be sixteen inline <meshStandardMaterial> elements, i.e.
+     sixteen material objects describing the same rubber. Sharing them is
+     the cheaper half of this change; the visible half is below.
+
+     A cylinder comes in three groups — lateral surface, then the two caps —
+     so passing an array puts tread on the running surface *only*. Before,
+     one material carried the tread normal map across the whole tyre and the
+     sidewalls were cut with tread blocks too, which no tyre has: the lugs
+     wrapped around onto the flat face and read as noise on a dark disc. */
+  const tread = useOwned(
+    useMemo(
+      () =>
+        new THREE.MeshStandardMaterial({
+          color: "#141518",
+          // Not a perfect 1: real rubber holds a broad sheen along the
+          // shoulder, and at roughness 1 with no environment the tyre
+          // renders as an unlit black hole in the bodywork.
+          roughness: 0.82,
+          metalness: 0,
+          envMapIntensity: 0.4,
+          normalMap: rubber,
+          normalScale: new THREE.Vector2(1.5, 1.5),
+        }),
+      [rubber],
+    ),
+  );
+  /* Sidewall: smoother and a touch darker than the tread. A tyre's flank is
+     moulded, not cut, so it catches a broad soft highlight where the tread
+     scatters it. */
+  const sidewall = useOwned(
+    useMemo(
+      () =>
+        new THREE.MeshStandardMaterial({
+          color: "#101114",
+          roughness: 0.92,
+          metalness: 0,
+          envMapIntensity: 0.25,
+        }),
+      [],
+    ),
+  );
+  /* Rim: the face carries the spokes, bolts and hub cap as relief; the
+     lateral band stays plain, because that edge is the barrel and it is
+     smooth on a real wheel. */
+  const rimEdge = useOwned(
+    useMemo(
+      () =>
+        new THREE.MeshStandardMaterial({
+          color: "#ccd2d9",
+          roughness: 0.2,
+          metalness: 0.8,
+          envMapIntensity: 2.6,
+        }),
+      [],
+    ),
+  );
+  const rimDisc = useOwned(
+    useMemo(
+      () =>
+        new THREE.MeshStandardMaterial({
+          color: "#ccd2d9",
+          // Slightly rougher than the barrel: the face is the part that
+          // collects road film, and a mirror-bright disc is the other half
+          // of why the old rim read as a sticker.
+          roughness: 0.28,
+          metalness: 0.85,
+          envMapIntensity: 2.2,
+          normalMap: rimFace,
+          normalScale: new THREE.Vector2(1.1, 1.1),
+        }),
+      [rimFace],
+    ),
+  );
 
   const cast = quality === "high";
   // 16 wheels, laid out like the real vehicle: twin steer axles running
@@ -1628,47 +1775,29 @@ function BuiltTruck({
             // A dual axle is the same tyre twice, shoulder to shoulder.
             (dual ? [0.86, 1.26] : [1.24]).map((off) => (
               <group key={`${z}-${side}-${off}`} position={[side * off, 0.72, z]}>
-                {/* Matte black rubber with a normal-mapped tread. The colour
-                    can go this dark now that the tread carries real relief —
-                    it is the grooves catching the sun that keep the tyre from
-                    reading as a flat hole, not the base grey. */}
-                <mesh rotation={[0, 0, Math.PI / 2]} castShadow={cast}>
-                  <cylinderGeometry args={[0.72, 0.72, 0.4, quality === "high" ? 22 : 10]} />
-                  <meshStandardMaterial
-                    color="#141518"
-                    // Not a perfect 1: real rubber holds a broad sheen along
-                    // the shoulder, and at roughness 1 with no environment
-                    // the tyre renders as an unlit black hole in the
-                    // bodywork — the tread relief has nothing to catch.
-                    roughness={0.82}
-                    metalness={0}
-                    envMapIntensity={0.4}
-                    normalMap={rubber}
-                    normalScale={new THREE.Vector2(1.5, 1.5)}
-                  />
+                {/* Tread on the running surface, sidewall on the flanks.
+                    The material array maps to a cylinder's three groups —
+                    lateral, top cap, bottom cap — so the tread normal map
+                    stops at the shoulder the way a moulded tyre does.
+
+                    32 segments at high, up from 22: at the dock beat the
+                    camera is close enough that the old silhouette faceted
+                    visibly along the top of the tyre. Ten extra segments on
+                    a cylinder is nothing next to being able to see the
+                    flat spots. The low path is untouched. */}
+                <mesh
+                  rotation={[0, 0, Math.PI / 2]}
+                  castShadow={cast}
+                  material={[tread, sidewall, sidewall]}
+                >
+                  <cylinderGeometry args={[0.72, 0.72, 0.4, quality === "high" ? 32 : 10]} />
                 </mesh>
                 {/* Only the outer tyre of a pair shows a rim. */}
                 {(!dual || off > 1.2) && (
                   <group position={[side * 0.21, 0, 0]} rotation={[0, 0, Math.PI / 2]}>
-                    <mesh>
-                      <cylinderGeometry args={[0.42, 0.42, 0.04, quality === "high" ? 20 : 8]} />
-                      <meshStandardMaterial
-                        color="#ccd2d9"
-                        roughness={0.2}
-                        metalness={0.8}
-                        envMapIntensity={2.6}
-                      />
-                    </mesh>
-                    {/* Recessed hub: one extra ring is what stops a rim
-                        reading as a flat silver disc. */}
-                    <mesh position={[0, side * 0.012, 0]}>
-                      <cylinderGeometry args={[0.24, 0.24, 0.05, quality === "high" ? 16 : 8]} />
-                      <meshStandardMaterial
-                        color="#8b9199"
-                        roughness={0.3}
-                        metalness={1}
-                        envMapIntensity={1.8}
-                      />
+                    {/* Barrel plain, face carrying the spokes and bolts. */}
+                    <mesh material={[rimEdge, rimDisc, rimDisc]}>
+                      <cylinderGeometry args={[0.42, 0.42, 0.04, quality === "high" ? 28 : 8]} />
                     </mesh>
                   </group>
                 )}
