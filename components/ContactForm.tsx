@@ -1,6 +1,8 @@
 "use client";
 
 import { useRef, useState, type FormEvent } from "react";
+import { company } from "@/lib/site";
+import { validateField, validateAll } from "@/lib/form-validation";
 import { AnimatePresence, m } from "framer-motion";
 
 type Status = "idle" | "submitting" | "success" | "error";
@@ -33,55 +35,9 @@ const EMPTY: Values = {
   message: "",
 };
 
-/* Deliberately permissive. A stricter pattern rejects real addresses — new
-   TLDs, plus-addressing, sub-domains — and the only authority on whether an
-   address exists is the mail that gets sent to it. This catches the mistakes
-   worth catching: no @, nothing before or after it, no dot in the domain,
-   a stray space. */
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-/* Phone is optional; validated only when the visitor typed something. Digits
-   after stripping the punctuation a person actually uses. */
-const PHONE_CHARS = /^[0-9+()\-.\s]+$/;
-
-/** Per-field rules. Returns a message, or undefined when the value is fine. */
-function validateField(name: FieldName, values: Values): string | undefined {
-  const v = values[name].trim();
-  switch (name) {
-    case "name":
-      if (!v) return "Please enter your name.";
-      if (v.length < 2) return "That name looks too short.";
-      return;
-    case "email":
-      if (!v) return "Please enter an email address.";
-      if (!EMAIL.test(v)) return "Enter a valid email, like you@company.com.";
-      return;
-    case "phone":
-      // Optional — but if it is filled in it has to be usable.
-      if (!v) return;
-      if (!PHONE_CHARS.test(v)) return "Use digits, spaces, + and - only.";
-      if (v.replace(/\D/g, "").length < 8) return "That number looks too short.";
-      return;
-    case "message":
-      if (!v) return "Tell us what you need to move.";
-      if (v.length < 10) return "A little more detail helps us quote accurately.";
-      return;
-    default:
-      return;
-  }
-}
-
 const VALIDATED: FieldName[] = ["name", "email", "phone", "message"];
 
 type Errors = Partial<Record<FieldName, string>>;
-
-function validateAll(values: Values): Errors {
-  const errors: Errors = {};
-  for (const name of VALIDATED) {
-    const message = validateField(name, values);
-    if (message) errors[name] = message;
-  }
-  return errors;
-}
 
 /**
  * Client-side enquiry form. Validates required fields and email format, then
@@ -108,20 +64,20 @@ export function ContactForm() {
     // Re-check as they type only once the field has already been flagged, so
     // the message clears the moment it is fixed rather than at the next blur.
     if (touched[key]) {
-      setErrors((prev) => ({ ...prev, [key]: validateField(key, next) }));
+      setErrors((prev) => ({ ...prev, [key]: validateField(key, next[key]) }));
     }
     if (status === "error") setStatus("idle");
   };
 
   const blur = (key: FieldName) => () => {
     setTouched((t) => ({ ...t, [key]: true }));
-    setErrors((prev) => ({ ...prev, [key]: validateField(key, form) }));
+    setErrors((prev) => ({ ...prev, [key]: validateField(key, form[key]) }));
   };
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
 
-    const found = validateAll(form);
+    const found = validateAll(VALIDATED, form);
     setErrors(found);
     setTouched(Object.fromEntries(VALIDATED.map((n) => [n, true])));
 
@@ -153,7 +109,7 @@ export function ContactForm() {
     // Brief delay for the success transition, then open mail client.
     window.setTimeout(() => {
       try {
-        window.location.href = `mailto:protrans2025@gmail.com?subject=${encodeURIComponent(
+        window.location.href = `mailto:${company.email}?subject=${encodeURIComponent(
           subject,
         )}&body=${encodeURIComponent(body)}`;
         setStatus("success");
@@ -339,8 +295,8 @@ export function ContactForm() {
                   className="rounded-xl bg-danger-soft px-4 py-3 text-sm text-danger"
                 >
                   We couldn&apos;t open your mail app. Email us directly at{" "}
-                  <a className="font-semibold underline" href="mailto:protrans2025@gmail.com">
-                    protrans2025@gmail.com
+                  <a className="font-semibold underline" href={`mailto:${company.email}`}>
+                    {company.email}
                   </a>
                   .
                 </m.p>

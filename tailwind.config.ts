@@ -47,6 +47,12 @@ const config: Config = {
         danger: {
           DEFAULT: "#C0392B",
           soft: "#FBEBE9",
+          // The same hue lifted for dark surfaces. #C0392B on the ink
+          // enquiry card is roughly 3.3:1 — under the 4.5:1 small-text
+          // floor, i.e. an error message you cannot comfortably read. This
+          // is an addition for the home form's validation text only; nothing
+          // already on the page uses it, so no existing pixel changes.
+          light: "#F08D80",
         },
         cold: {
           DEFAULT: "#B4B4B4",

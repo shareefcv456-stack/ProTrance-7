@@ -45,7 +45,7 @@ export function PageHero({
           </div>
         </Reveal>
 
-        <h1 className="mt-7 max-w-4xl font-display text-[clamp(1.7rem,1.05rem+3.05vw,3.75rem)] font-900 uppercase leading-[0.98] tracking-tightest text-white">
+        <h1 className="mt-7 max-w-4xl font-display text-[clamp(1.45rem,0.76rem+3.21vw,3rem)] lg:text-[clamp(1.7rem,1.05rem+3.05vw,3.75rem)] font-900 uppercase leading-[0.98] tracking-tightest text-white">
           <StaggerText text={title} delay={0.15} />
         </h1>
 

@@ -12,7 +12,7 @@ const facts = [
 /** Dark full-width band; a reach stacker stands against its left edge on desktop. */
 export function FleetStory() {
   return (
-    <section className="px-3 pb-14 pt-8 sm:px-5 sm:pb-16 lg:px-0 lg:pt-0">
+    <section className="px-3 pb-10 pt-6 sm:px-5 sm:pb-12 lg:px-0 lg:pb-16 lg:pt-0">
       {/* One positioning context spanning the headroom the machine breaks into
           *and* the band itself.
 
@@ -45,7 +45,7 @@ export function FleetStory() {
 
         {/* Dark band */}
         <div className="rounded-2xl bg-[#101010] text-paper lg:rounded-none">
-          <div className="px-7 py-12 sm:px-12 sm:py-16 md:pl-[52%] md:pr-12 lg:pb-10 lg:pr-16 min-[1400px]:pl-[46%]">
+          <div className="px-7 py-10 sm:px-12 sm:py-12 md:pl-[52%] md:pr-12 lg:py-16 lg:pb-10 lg:pr-16 min-[1400px]:pl-[46%]">
             {/* The reach stacker, below md.
                 
                 This is where a static depot photograph used to sit — a second,
@@ -62,7 +62,7 @@ export function FleetStory() {
                 copy. One element cannot be both. Each is `display:none` at the
                 other's widths, so a lazy next/image only ever downloads the
                 one that is actually shown. */}
-            <Reveal className="relative mb-9 aspect-[905/965] w-[78%] max-w-[290px] md:hidden">
+            <Reveal className="relative mb-7 aspect-[905/965] w-[78%] max-w-[290px] md:hidden">
               <Image
                 src="/images/reach-stacker.png"
                 alt="Container reach stacker lifting equipment"

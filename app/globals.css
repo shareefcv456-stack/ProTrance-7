@@ -28,6 +28,17 @@ body {
   background: #fffcfc;
   color: #272727;
   scrollbar-width: none;
+  /* Site-wide guard against a sideways scrollbar: a rotated card, a wide
+     grid or a long unbroken string can push a few pixels past the viewport
+     on a narrow screen, and the whole page then rocks horizontally.
+
+     `clip`, never `hidden`. `overflow-x: hidden` on body makes it a scroll
+     container, and that breaks `position: sticky` for descendants — which
+     is the entire mechanism the 380vh 3D hero is pinned with. `clip` cuts
+     the overflow without creating a scroll container, so the hero is
+     untouched. Browsers too old for `clip` ignore the line and simply keep
+     today's behaviour. */
+  overflow-x: clip;
 }
 
 /* Selection */

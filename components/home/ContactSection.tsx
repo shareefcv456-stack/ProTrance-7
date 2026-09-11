@@ -1,11 +1,22 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { AnimatePresence, m } from "framer-motion";
 import { company } from "@/lib/site";
+import { validateField, validateAll } from "@/lib/form-validation";
 import { Reveal } from "@/components/motion/Reveal";
 
-type Status = "idle" | "submitting" | "success";
+// "error" is new: the mailto hand-off could previously fail silently and
+// leave the button stuck on "Preparing" with no way forward.
+type Status = "idle" | "submitting" | "success" | "error";
+
+type FieldName = "name" | "phone" | "email" | "message";
+type Errors = Partial<Record<FieldName, string>>;
+
+/** Required plus the optional phone, which is checked only when filled.
+    Same four fields, same rules and same wording as the contact page —
+    see lib/form-validation. */
+const VALIDATED: FieldName[] = ["name", "email", "phone", "message"];
 
 const phone1 = company.phones.mobile[0];
 const phone2 = company.phones.mobile[1];
@@ -37,10 +48,12 @@ const channels = [
 function InputShell({
   label,
   required,
+  error,
   children,
 }: {
   label: string;
   required?: boolean;
+  error?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -50,6 +63,25 @@ function InputShell({
         {required && <span className="text-accent"> *</span>}
       </span>
       {children}
+      {/* Fixed min-height so a message appearing never shifts the fields
+          below it — the same reservation the contact page's FieldError
+          makes. danger-light rather than danger: this card is ink. */}
+      <span className="mt-1 block min-h-[1.05rem]">
+        <AnimatePresence initial={false} mode="wait">
+          {error && (
+            <m.span
+              key={error}
+              initial={{ opacity: 0, y: -2 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -2 }}
+              transition={{ duration: 0.16 }}
+              className="block text-[0.7rem] leading-[1.05rem] text-danger-light"
+            >
+              {error}
+            </m.span>
+          )}
+        </AnimatePresence>
+      </span>
     </label>
   );
 }
@@ -64,20 +96,56 @@ const inputClass =
  */
 export function ContactSection() {
   const [status, setStatus] = useState<Status>("idle");
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<Record<FieldName, string>>({
     name: "",
     phone: "",
     email: "",
     message: "",
   });
+  const [errors, setErrors] = useState<Errors>({});
+  // A field's error only appears once the visitor has left it or tried to
+  // submit. Flagging an address as invalid while it is still being typed is
+  // true and useless.
+  const [touched, setTouched] = useState<Partial<Record<FieldName, boolean>>>({});
+  const formRef = useRef<HTMLFormElement>(null);
 
   const update =
-    (key: keyof typeof form) =>
-    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
-      setForm((f) => ({ ...f, [key]: e.target.value }));
+    (key: FieldName) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      const value = e.target.value;
+      setForm((f) => ({ ...f, [key]: value }));
+      // Re-check as they type only once the field has been flagged, so the
+      // message clears the moment it is fixed rather than at the next blur.
+      if (touched[key]) {
+        setErrors((prev) => ({ ...prev, [key]: validateField(key, value) }));
+      }
+      if (status === "error") setStatus("idle");
+    };
+
+  const blur = (key: FieldName) => () => {
+    setTouched((t) => ({ ...t, [key]: true }));
+    setErrors((prev) => ({ ...prev, [key]: validateField(key, form[key]) }));
+  };
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
+
+    const found = validateAll(VALIDATED, form);
+    setErrors(found);
+    setTouched(Object.fromEntries(VALIDATED.map((n) => [n, true])));
+
+    const firstInvalid = VALIDATED.find((n) => found[n]);
+    if (firstInvalid) {
+      // Move the caret to the problem rather than leaving the visitor to
+      // hunt for red text that may be off-screen on a phone.
+      const el = formRef.current?.elements.namedItem(firstInvalid);
+      if (el instanceof HTMLElement) {
+        el.focus();
+        el.scrollIntoView({ block: "center", behavior: "smooth" });
+      }
+      return;
+    }
+
     setStatus("submitting");
     const body = [
       `Name: ${form.name}`,
@@ -87,12 +155,20 @@ export function ContactSection() {
       form.message,
     ].join("\n");
     window.setTimeout(() => {
-      window.location.href = `mailto:${company.email}?subject=${encodeURIComponent(
-        `Logistics enquiry - ${form.name}`,
-      )}&body=${encodeURIComponent(body)}`;
-      setStatus("success");
+      try {
+        window.location.href = `mailto:${company.email}?subject=${encodeURIComponent(
+          `Logistics enquiry - ${form.name}`,
+        )}&body=${encodeURIComponent(body)}`;
+        setStatus("success");
+      } catch {
+        // A blocked or missing mail handler must not leave the button stuck
+        // on "Preparing" with no way forward.
+        setStatus("error");
+      }
     }, 650);
   };
+
+  const invalidCount = Object.values(errors).filter(Boolean).length;
 
   return (
     <section id="contact" className="bg-paper py-14 sm:py-20">
@@ -202,24 +278,42 @@ export function ContactSection() {
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   onSubmit={onSubmit}
+                  ref={formRef}
+                  // Our own messages replace the browser's default bubbles,
+                  // which are unstyled, one-at-a-time and vanish on blur.
+                  // `required` stays on each field for assistive tech.
+                  noValidate
                   className="space-y-5"
                 >
                   <div className="grid gap-5 sm:grid-cols-2">
-                    <InputShell label="Full name" required>
+                    <InputShell
+                      label="Full name"
+                      required
+                      error={touched.name ? errors.name : undefined}
+                    >
                       <input
+                        name="name"
                         required
+                        aria-invalid={!!(touched.name && errors.name)}
                         value={form.name}
                         onChange={update("name")}
+                        onBlur={blur("name")}
                         placeholder="Your name"
                         autoComplete="name"
                         className={inputClass}
                       />
                     </InputShell>
-                    <InputShell label="Phone">
+                    <InputShell
+                      label="Phone"
+                      error={touched.phone ? errors.phone : undefined}
+                    >
                       <input
+                        name="phone"
                         type="tel"
+                        aria-invalid={!!(touched.phone && errors.phone)}
                         value={form.phone}
                         onChange={update("phone")}
+                        onBlur={blur("phone")}
                         placeholder="+91 00000 00000"
                         autoComplete="tel"
                         className={inputClass}
@@ -227,28 +321,85 @@ export function ContactSection() {
                     </InputShell>
                   </div>
 
-                  <InputShell label="Email" required>
+                  <InputShell
+                    label="Email"
+                    required
+                    error={touched.email ? errors.email : undefined}
+                  >
                     <input
+                      name="email"
                       type="email"
                       required
+                      aria-invalid={!!(touched.email && errors.email)}
                       value={form.email}
                       onChange={update("email")}
+                      onBlur={blur("email")}
                       placeholder="you@company.com"
                       autoComplete="email"
                       className={inputClass}
                     />
                   </InputShell>
 
-                  <InputShell label="What do you need to move?" required>
+                  <InputShell
+                    label="What do you need to move?"
+                    required
+                    error={touched.message ? errors.message : undefined}
+                  >
                     <textarea
+                      name="message"
                       required
+                      aria-invalid={!!(touched.message && errors.message)}
                       value={form.message}
                       onChange={update("message")}
+                      onBlur={blur("message")}
                       rows={5}
                       placeholder="Routes, timelines, and cargo type"
                       className={`${inputClass} resize-none`}
                     />
                   </InputShell>
+
+                  {/* Summary alert. The per-field messages say what is
+                      wrong; this says that something is, for anyone who
+                      submitted from the bottom of a long card and cannot see
+                      the flagged field. aria-live announces it without
+                      stealing focus. */}
+                  <div className="min-h-[2.6rem]" aria-live="polite">
+                    <AnimatePresence initial={false} mode="wait">
+                      {status === "error" && (
+                        <m.p
+                          key="send-error"
+                          initial={{ opacity: 0, y: -4 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0 }}
+                          role="alert"
+                          className="rounded-xl bg-danger-soft px-4 py-3 text-sm text-danger"
+                        >
+                          We couldn&apos;t open your mail app. Email us directly at{" "}
+                          <a
+                            className="font-semibold underline"
+                            href={`mailto:${company.email}`}
+                          >
+                            {company.email}
+                          </a>
+                          .
+                        </m.p>
+                      )}
+                      {status !== "error" && invalidCount > 0 && (
+                        <m.p
+                          key="invalid-summary"
+                          initial={{ opacity: 0, y: -4 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0 }}
+                          role="alert"
+                          className="text-sm text-danger-light"
+                        >
+                          {invalidCount === 1
+                            ? "One field needs attention before we can send this."
+                            : `${invalidCount} fields need attention before we can send this.`}
+                        </m.p>
+                      )}
+                    </AnimatePresence>
+                  </div>
 
                   <button
                     type="submit"
