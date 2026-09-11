@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, type FormEvent } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, m } from "framer-motion";
 
 type Status = "idle" | "submitting" | "success" | "error";
 
@@ -178,7 +178,7 @@ export function ContactForm() {
     <div className="relative overflow-hidden rounded-3xl border border-paper-line bg-white/50 p-7 sm:p-9">
       <AnimatePresence mode="wait">
         {status === "success" ? (
-          <motion.div
+          <m.div
             key="success"
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
@@ -213,9 +213,9 @@ export function ContactForm() {
             >
               Send another
             </button>
-          </motion.div>
+          </m.div>
         ) : (
-          <motion.form
+          <m.form
             key="form"
             ref={formRef}
             initial={{ opacity: 0 }}
@@ -330,7 +330,7 @@ export function ContactForm() {
             <div className="min-h-[2.6rem]" aria-live="polite">
             <AnimatePresence initial={false} mode="wait">
               {status === "error" && (
-                <motion.p
+                <m.p
                   key="send-error"
                   initial={{ opacity: 0, y: -4 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -343,10 +343,10 @@ export function ContactForm() {
                     protrans2025@gmail.com
                   </a>
                   .
-                </motion.p>
+                </m.p>
               )}
               {status !== "error" && invalidCount > 0 && (
-                <motion.p
+                <m.p
                   key="invalid-summary"
                   initial={{ opacity: 0, y: -4 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -357,7 +357,7 @@ export function ContactForm() {
                   {invalidCount === 1
                     ? "One field needs attention before we can send this."
                     : `${invalidCount} fields need attention before we can send this.`}
-                </motion.p>
+                </m.p>
               )}
             </AnimatePresence>
             </div>
@@ -403,7 +403,7 @@ export function ContactForm() {
                 </svg>
               )}
             </button>
-          </motion.form>
+          </m.form>
         )}
       </AnimatePresence>
     </div>
@@ -422,7 +422,7 @@ function FieldError({ id, message }: { id: string; message?: string }) {
     <span className="mt-1 block min-h-[1.05rem]">
       <AnimatePresence initial={false} mode="wait">
         {message && (
-          <motion.span
+          <m.span
             key={message}
             id={id}
             initial={{ opacity: 0, y: -2 }}
@@ -432,7 +432,7 @@ function FieldError({ id, message }: { id: string; message?: string }) {
             className="block text-[0.7rem] leading-[1.05rem] text-danger"
           >
             {message}
-          </motion.span>
+          </m.span>
         )}
       </AnimatePresence>
     </span>

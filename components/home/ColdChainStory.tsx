@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { motion, useReducedMotion } from "framer-motion";
+import { m, useReducedMotion } from "framer-motion";
 import type { ImageRef } from "@/lib/images";
 import { images } from "@/lib/images";
 import { Reveal } from "@/components/motion/Reveal";
@@ -129,7 +129,7 @@ export function ColdChainStory() {
         {/* Fanned flip cards */}
         <div className="relative mx-auto h-[320px] w-full max-w-[320px] sm:h-[460px] sm:max-w-[460px]">
           {/* Back card — rotates out as the section enters */}
-          <motion.div
+          <m.div
             initial={reduce ? { rotate: 10, x: 24 } : { rotate: 0, x: 0 }}
             whileInView={{ rotate: 10, x: 24 }}
             viewport={{ once: true, amount: 0.4 }}
@@ -148,7 +148,7 @@ export function ColdChainStory() {
                 "Delicate gift packs",
               ]}
             />
-          </motion.div>
+          </m.div>
 
           {/* Front card */}
           <Reveal className="absolute bottom-0 left-0 z-10 h-[88%] w-[72%] hover:z-30">

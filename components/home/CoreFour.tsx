@@ -4,7 +4,7 @@ import { useRef } from "react";
 import Link from "next/link";
 import {
   cubicBezier,
-  motion,
+  m,
   useReducedMotion,
   useScroll,
   useSpring,
@@ -43,7 +43,7 @@ function CoreCard({
 
   return (
     <div className={index % 2 === 1 ? "xl:translate-y-16" : ""}>
-      <motion.div
+      <m.div
         style={reduce ? undefined : { y, opacity }}
         className="h-full"
       >
@@ -85,7 +85,7 @@ function CoreCard({
             <span className="absolute bottom-2.5 right-4 h-3 w-3 rounded-full bg-white" />
           </div>
         </article>
-      </motion.div>
+      </m.div>
     </div>
   );
 }

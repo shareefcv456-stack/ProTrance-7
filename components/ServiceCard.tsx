@@ -1,6 +1,6 @@
 "use client";
 
-import { motion, useReducedMotion } from "framer-motion";
+import { m, useReducedMotion } from "framer-motion";
 
 type Service = {
   id: string;
@@ -27,7 +27,7 @@ export function ServiceCard({
   const light = theme === "light";
 
   return (
-    <motion.article
+    <m.article
       initial={reduce ? {} : { opacity: 0, y: 24 }}
       whileInView={reduce ? {} : { opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-8% 0px" }}
@@ -85,6 +85,6 @@ export function ServiceCard({
           {service.short}
         </span>
       </div>
-    </motion.article>
+    </m.article>
   );
 }

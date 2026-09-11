@@ -3702,6 +3702,25 @@ function Port({
   const box = useRef<THREE.Group>(null);
   const gang = useRef<THREE.Group>(null);
   const masts = useRef<THREE.Group>(null);
+  /** Emissive materials and point lights per mast, resolved once.
+
+      This used to `traverse()` all five masts on every frame — roughly
+      thirty-five node visits and a fresh closure each, sixty times a second,
+      to write two numbers per mast. The tree never changes shape after it is
+      built, so the walk is pure repetition: the same predicate matches the
+      same nodes for the life of the scene. Resolved on the first frame the
+      group has children and read from a flat array after that, which is the
+      shape `lamps` in Rig already uses for the truck's own emitters.
+
+      The predicate is copied exactly, black-emissive standard materials
+      included: every MeshStandardMaterial carries an `emissive` colour, so
+      the old walk also wrote to the pole, base and head. Writing an
+      intensity onto a black emissive changes nothing on screen, but keeping
+      them in the set means this cannot differ from the traverse by even an
+      unused assignment. */
+  const mastNodes = useRef<
+    Array<{ mats: THREE.MeshStandardMaterial[]; lights: THREE.PointLight[] }> | null
+  >(null);
 
   // Unloading, once the truck has stopped. One move: the spreader comes
   // down beside the trailer, latches, lifts clear, and the trolley runs it
@@ -3712,16 +3731,32 @@ function Port({
     // photocells trip as the light falls. Staggering it is the difference
     // between "the sun set" and "someone flipped the yard on".
     if (masts.current) {
-      masts.current.children.forEach((m, i) => {
-        const k = smooth(clamp01((progress.current - (0.8 + i * 0.026)) / 0.05));
-        m.traverse((o) => {
-          const mesh = o as THREE.Mesh;
-          const mat = mesh.material as THREE.MeshStandardMaterial | undefined;
-          if (mesh.isMesh && mat?.emissive) mat.emissiveIntensity = k * 7;
-          const light = o as unknown as THREE.PointLight;
-          if (light.isPointLight) light.intensity = k * 300;
+      // `children.length` and not just the null check: caching on a frame
+      // where the group had mounted but its masts had not would freeze an
+      // empty array in place and leave the yard dark for the whole run.
+      if (mastNodes.current === null && masts.current.children.length > 0) {
+        mastNodes.current = masts.current.children.map((mast) => {
+          const mats: THREE.MeshStandardMaterial[] = [];
+          const lights: THREE.PointLight[] = [];
+          mast.traverse((o) => {
+            const mesh = o as THREE.Mesh;
+            const mat = mesh.material as THREE.MeshStandardMaterial | undefined;
+            if (mesh.isMesh && mat?.emissive) mats.push(mat);
+            const light = o as unknown as THREE.PointLight;
+            if (light.isPointLight) lights.push(light);
+          });
+          return { mats, lights };
         });
-      });
+      }
+      const nodes = mastNodes.current;
+      if (nodes) {
+        for (let i = 0; i < nodes.length; i++) {
+          const k = smooth(clamp01((progress.current - (0.8 + i * 0.026)) / 0.05));
+          const { mats, lights } = nodes[i];
+          for (const mat of mats) mat.emissiveIntensity = k * 7;
+          for (const light of lights) light.intensity = k * 300;
+        }
+      }
     }
 
     // Starts once the reverse has finished and the doors are open.

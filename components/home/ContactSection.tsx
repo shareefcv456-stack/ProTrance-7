@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, m } from "framer-motion";
 import { company } from "@/lib/site";
 import { Reveal } from "@/components/motion/Reveal";
 
@@ -158,7 +158,7 @@ export function ContactSection() {
           <div className="relative overflow-hidden rounded-2xl bg-ink p-7 sm:p-10">
             <AnimatePresence mode="wait" initial={false}>
               {status === "success" ? (
-                <motion.div
+                <m.div
                   key="success"
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -194,9 +194,9 @@ export function ContactSection() {
                   >
                     Send another
                   </button>
-                </motion.div>
+                </m.div>
               ) : (
-                <motion.form
+                <m.form
                   key="form"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
@@ -273,7 +273,7 @@ export function ContactSection() {
                       </svg>
                     </span>
                   </button>
-                </motion.form>
+                </m.form>
               )}
             </AnimatePresence>
           </div>

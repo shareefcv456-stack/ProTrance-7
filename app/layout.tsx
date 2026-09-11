@@ -3,6 +3,7 @@ import { Space_Grotesk, Manrope, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
+import { MotionProvider } from "@/components/motion/MotionProvider";
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
@@ -68,9 +69,11 @@ export default function RootLayout({
       className={`${spaceGrotesk.variable} ${manrope.variable} ${jetbrains.variable}`}
     >
       <body className="min-h-screen bg-paper font-sans text-ink antialiased">
-        <Header />
-        <main>{children}</main>
-        <Footer />
+        <MotionProvider>
+          <Header />
+          <main>{children}</main>
+          <Footer />
+        </MotionProvider>
       </body>
     </html>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { motion, useReducedMotion } from "framer-motion";
+import { m, useReducedMotion } from "framer-motion";
 import { fleet } from "@/lib/site";
 import { images } from "@/lib/images";
 import { SectionHeading } from "@/components/ui/SectionHeading";
@@ -120,7 +120,7 @@ function TempMonitor() {
           fill="none"
           preserveAspectRatio="none"
         >
-          <motion.path
+          <m.path
             d={d}
             stroke="#FF5B29"
             strokeWidth={2.5}

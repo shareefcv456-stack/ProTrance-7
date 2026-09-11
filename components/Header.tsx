@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, m } from "framer-motion";
 import { nav } from "@/lib/site";
 
 export function Header() {
@@ -124,7 +124,7 @@ export function Header() {
       {/* Mobile menu overlay */}
       <AnimatePresence>
         {open && (
-          <motion.div
+          <m.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -164,7 +164,7 @@ export function Header() {
             <div className="flex flex-1 flex-col items-center justify-center gap-10 px-6 pb-16">
               <nav className="flex flex-col items-center gap-7">
                 {nav.map((item, i) => (
-                  <motion.div
+                  <m.div
                     key={item.href}
                     initial={{ opacity: 0, y: 14 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -176,7 +176,7 @@ export function Header() {
                     >
                       {item.label}
                     </Link>
-                  </motion.div>
+                  </m.div>
                 ))}
               </nav>
 
@@ -184,7 +184,7 @@ export function Header() {
                   included. The numbers live on the contact page and in the
                   footer. The CTA keeps the delay the phone line used to hold,
                   so the stagger reads the same. */}
-              <motion.div
+              <m.div
                 initial={{ opacity: 0, y: 14 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.36, duration: 0.4 }}
@@ -195,9 +195,9 @@ export function Header() {
                 >
                   Contact us
                 </Link>
-              </motion.div>
+              </m.div>
             </div>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
     </>

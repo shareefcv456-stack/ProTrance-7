@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { motion, useReducedMotion } from "framer-motion";
+import { m, useReducedMotion } from "framer-motion";
 import { advantages } from "@/lib/site";
 import { images } from "@/lib/images";
 
@@ -56,7 +56,7 @@ export function WhyRows() {
     <section className="overflow-x-clip bg-[#101010] py-14 sm:py-20">
       <div className="shell">
         {/* Header */}
-        <motion.span
+        <m.span
           initial={reduce ? undefined : { opacity: 0, y: -16 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-15% 0px" }}
@@ -64,8 +64,8 @@ export function WhyRows() {
           className="eyebrow block text-accent"
         >
           Why us
-        </motion.span>
-        <motion.h2
+        </m.span>
+        <m.h2
           initial={reduce ? undefined : { opacity: 0, y: 40 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-15% 0px" }}
@@ -73,8 +73,8 @@ export function WhyRows() {
           className="mt-5 max-w-[720px] font-display text-[clamp(1.5rem,1.15rem+2.1vw,3rem)] font-600 uppercase leading-[1.08] tracking-tighter text-paper"
         >
           A partner that speaks <span className="text-accent">FMCG.</span>
-        </motion.h2>
-        <motion.p
+        </m.h2>
+        <m.p
           initial={reduce ? undefined : { opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-15% 0px" }}
@@ -83,11 +83,11 @@ export function WhyRows() {
         >
           We understand shelf-life, festival peaks, and border paperwork,
           because that is the world we were built for.
-        </motion.p>
+        </m.p>
 
         {/* Two-column: image left, accordion right */}
         <div className="mt-10 grid gap-10 lg:grid-cols-[minmax(0,4fr)_minmax(0,7fr)] lg:items-center lg:gap-14">
-          <motion.div
+          <m.div
             initial={reduce ? undefined : { opacity: 0, x: -60, rotate: -2 }}
             whileInView={{ opacity: 1, x: 0, rotate: 0 }}
             viewport={{ once: true, margin: "-15% 0px" }}
@@ -111,7 +111,7 @@ export function WhyRows() {
                 />
               </div>
             ))}
-          </motion.div>
+          </m.div>
 
           {/* Accordion */}
           <ul>
@@ -119,7 +119,7 @@ export function WhyRows() {
               const open = active === i;
               const [first, ...rest] = adv.title.split(" ");
               return (
-                <motion.li
+                <m.li
                   key={adv.title}
                   initial={reduce ? undefined : { opacity: 0, x: 40 }}
                   whileInView={{ opacity: 1, x: 0 }}
@@ -159,7 +159,7 @@ export function WhyRows() {
                       </p>
                     </div>
                   </div>
-                </motion.li>
+                </m.li>
               );
             })}
           </ul>

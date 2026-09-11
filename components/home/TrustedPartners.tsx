@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { motion, useReducedMotion } from "framer-motion";
+import { m, useReducedMotion } from "framer-motion";
 import { Reveal } from "@/components/motion/Reveal";
 
 const ease = [0.22, 1, 0.36, 1] as const;
@@ -146,7 +146,7 @@ export function TrustedPartners() {
           {cells.map((cell, i) => {
             const pair = pairs[cell.pair];
             return (
-              <motion.div
+              <m.div
                 key={i}
                 initial={reduce ? undefined : { opacity: 0 }}
                 whileInView={{ opacity: 1 }}
@@ -180,7 +180,7 @@ export function TrustedPartners() {
                     </>
                   )}
                 </div>
-              </motion.div>
+              </m.div>
             );
           })}
         </div>

@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import {
   AnimatePresence,
-  motion,
+  m,
   useMotionValueEvent,
   useSpring,
   useMotionValue,
@@ -121,7 +121,7 @@ function ChapterTick({
 
   return (
     <div className="flex h-8 flex-col items-end justify-start sm:h-9">
-      <motion.div style={{ opacity }} className="flex items-center gap-2 sm:gap-3">
+      <m.div style={{ opacity }} className="flex items-center gap-2 sm:gap-3">
         {/* Numbers only on a phone. The stacked layout puts the headline
             directly under this column, and the full labels ran across it —
             and the active stage's name is already spelled out at the top of
@@ -130,17 +130,17 @@ function ChapterTick({
           <span className="text-accent">{String(index + 1).padStart(2, "0")}</span>
           <span className="hidden sm:inline"> {chapters[index].label}</span>
         </span>
-        <motion.span style={{ width }} className="h-px bg-accent" />
-      </motion.div>
+        <m.span style={{ width }} className="h-px bg-accent" />
+      </m.div>
       {/* Sub-text belongs to the active stage only, and only where there is
           room for it — on a phone the column is already the width of the
           label. */}
-      <motion.span
+      <m.span
         style={{ opacity: subOpacity, x: subX }}
         className="mt-1 hidden text-[10px] leading-none text-white/55 sm:block"
       >
         {chapters[index].sub}
-      </motion.span>
+      </m.span>
     </div>
   );
 }
@@ -331,14 +331,14 @@ export function HomeHero() {
                 resolving rather than one image replacing another. */}
             <div className="absolute inset-0 overflow-hidden bg-[linear-gradient(180deg,#3f6fae_0%,#8fb0cd_30%,#d6dde0_44%,#f3ecdf_50%,#9c8f7e_56%,#3a332b_100%)]">
               {showScene && poster && (
-                <motion.div
+                <m.div
                   className="absolute inset-0"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: painted ? 1 : 0 }}
                   transition={{ duration: 0.9, ease }}
                 >
                   <HeroScene progress={progress} onReady={onReady} />
-                </motion.div>
+                </m.div>
               )}
             </div>
 
@@ -388,7 +388,7 @@ export function HomeHero() {
                   until the outgoing has gone, so they never overlap. */}
               <div className="min-h-[230px] sm:min-h-[290px] lg:min-h-[320px]">
                 <AnimatePresence mode="wait" initial={false}>
-                  <motion.div
+                  <m.div
                     key={stage}
                     initial={reduce ? false : { opacity: 0, y: 16 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -427,7 +427,7 @@ export function HomeHero() {
                     <p className="mt-5 max-w-[480px] text-pretty text-base leading-relaxed text-white/80 sm:text-lg">
                       {copy.body}
                     </p>
-                  </motion.div>
+                  </m.div>
                 </AnimatePresence>
               </div>
 
@@ -441,7 +441,7 @@ export function HomeHero() {
                   the bottom as one group, and self-start keeps the pill at
                   its content width instead of stretching across the column
                   the way a flex child otherwise would. */}
-              <motion.div
+              <m.div
                 initial={reduce ? undefined : { opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, delay: 0.95, ease }}
@@ -461,9 +461,9 @@ export function HomeHero() {
                 <span className="font-display text-xs font-600 text-ink">
                   On-Time All-India Delivery
                 </span>
-              </motion.div>
+              </m.div>
 
-              <motion.div
+              <m.div
                 initial={reduce ? undefined : { opacity: 0, y: 18 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.7, delay: 0.7, ease }}
@@ -503,7 +503,7 @@ export function HomeHero() {
                 >
                   Explore services
                 </Link>
-              </motion.div>
+              </m.div>
 
               {/* Service cards — one horizontal row pinned under the CTA
                   group, so the canvas centre stays clear of UI. */}
@@ -526,7 +526,7 @@ export function HomeHero() {
                   the type. The column already carries pb-8 underneath. */}
               <div className="flex flex-col gap-1 pt-1 pb-0 sm:ml-auto sm:grid sm:max-w-[620px] sm:grid-cols-3 sm:gap-4 sm:pb-1 sm:pt-10">
                 {chips.map((chip, i) => (
-                  <motion.div
+                  <m.div
                     key={chip.title}
                     initial={reduce ? undefined : { opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -559,7 +559,7 @@ export function HomeHero() {
                         {chip.body}
                       </span>
                     </div>
-                  </motion.div>
+                  </m.div>
                 ))}
               </div>
             </div>

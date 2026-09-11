@@ -1,6 +1,6 @@
 "use client";
 
-import { motion, useReducedMotion } from "framer-motion";
+import { m, useReducedMotion } from "framer-motion";
 
 type StaggerTextProps = {
   text: string;
@@ -34,7 +34,7 @@ export function StaggerText({
           className="inline-block overflow-hidden align-bottom"
           aria-hidden
         >
-          <motion.span
+          <m.span
             className={`inline-block ${wordClassName ?? ""}`}
             initial={{ y: "110%" }}
             animate={{ y: 0 }}
@@ -46,7 +46,7 @@ export function StaggerText({
           >
             {word}
             {i < words.length - 1 ? " " : ""}
-          </motion.span>
+          </m.span>
         </span>
       ))}
     </span>
