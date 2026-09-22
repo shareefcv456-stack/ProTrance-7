@@ -42,19 +42,40 @@ export default function Effects({
   const gl = useThree((st) => st.gl);
   const scene = useThree((st) => st.scene);
   const camera = useThree((st) => st.camera) as THREE.PerspectiveCamera;
-  const size = useThree((st) => st.size);
+  // Width and height as numbers, not the size object. R3F rebuilds `size`
+  // whenever the canvas's page offset changes — every debounced scroll tick
+  // once the sticky panel releases — and depending on that object reran the
+  // resize below, freeing and reallocating every bloom target each time.
+  const width = useThree((st) => st.size.width);
+  const height = useThree((st) => st.size.height);
   const dpr = useThree((st) => st.viewport.dpr);
 
   const { composer, bloom } = useMemo(() => {
-    // 2 samples, not 4. Measured at 1440x900 dpr 1.5 on an M2: the 4x
-    // multisampled RGBA16F target alone was ~33ms of the frame — more than
-    // every draw call in the scene put together, because resolving a
-    // half-float multisampled buffer that size is pure memory bandwidth.
-    // Dropping to 2 keeps the edges (this target is where all the scene's
-    // antialiasing happens) at half the bandwidth.
+    // No MSAA on this target, and the antialiasing is better for it.
+    //
+    // A multisampled half-float target is resolved to memory every frame, and
+    // on a tile-based GPU that resolve is the expensive path. Measured at
+    // 1440x900 on an M2, scrubbing the whole hero, frames over 32ms:
+    //
+    //   dpr 1.00, samples 2 ->  0.0%   (1440x900 backbuffer)
+    //   dpr 1.50, samples 2 -> 19.5%
+    //   dpr 1.50, samples 0 ->  2.3%   (2160x1350 backbuffer)
+    //   dpr 1.75, samples 0 -> 27.9%
+    //
+    // So two samples cost about what 2.25x the shading resolution costs, and
+    // the pixel ratio is the better place to spend it. Supersampling
+    // antialiases everything — the container corrugation, the wet asphalt
+    // specular, the chain-link, the tyre tread — where MSAA only ever covered
+    // polygon edges and left every one of those shimmering. Compared side by
+    // side at matched frame cost the higher ratio is cleaner on textured
+    // surfaces and indistinguishable on thin geometry (the guardrail, the
+    // lamp masts, the palm fronds).
+    //
+    // The pixel ratio is what carries this now, so the high path's adaptive
+    // floor is raised to 1.25 to match — see AdaptiveResolution.
     const target = new THREE.WebGLRenderTarget(1, 1, {
       type: THREE.HalfFloatType,
-      samples: 2,
+      samples: 0,
     });
     const comp = new EffectComposer(gl, target);
     comp.addPass(new RenderPass(scene, camera));
@@ -71,7 +92,7 @@ export default function Effects({
 
   useEffect(() => {
     composer.setPixelRatio(dpr);
-    composer.setSize(size.width, size.height);
+    composer.setSize(width, height);
     // Bloom runs its mip chain at half the frame's linear resolution.
     //
     // composer.setSize() hands every pass the full framebuffer size, and
@@ -83,11 +104,28 @@ export default function Effects({
     // chain over the whole dusk yard frame: 0.2% mean channel difference.
     //
     // Called after setSize because that is what the composer overwrote.
+    //
+    // CSS pixels, deliberately not device pixels. Two reasons, and the second
+    // is the one that showed up in a trace.
+    //
+    // Visually it changes nothing: this chain is a five-level Gaussian with a
+    // 0.32 radius thresholded at 1.05, so its output carries no detail finer
+    // than the kernel and running it at 1x rather than 1.75x is the same glow.
+    // It is also exactly the chain a 1x display already renders, and the scene
+    // was composed against that.
+    //
+    // The cost it removes is the reallocation. UnrealBloomPass owns eleven
+    // render targets, and WebGLRenderTarget.setSize only frees and rebuilds
+    // when the dimensions actually differ — so sizing this off the device
+    // ratio meant every adaptive-resolution step tore down and rebuilt the
+    // whole chain mid-scroll. Off CSS pixels the chain simply does not move
+    // when the ratio does, and a resolution step touches the composer's two
+    // HDR targets and nothing else.
     bloom.setSize(
-      Math.max(2, size.width * dpr * BLOOM_SCALE),
-      Math.max(2, size.height * dpr * BLOOM_SCALE),
+      Math.max(2, width * BLOOM_SCALE),
+      Math.max(2, height * BLOOM_SCALE),
     );
-  }, [composer, bloom, size, dpr]);
+  }, [composer, bloom, width, height, dpr]);
 
   useFrame(() => {
     // Bloom earns its keep only once the lamps are the subject: near-nothing

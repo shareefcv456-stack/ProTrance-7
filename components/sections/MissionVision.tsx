@@ -9,7 +9,7 @@ export function MissionVision() {
         {/* Mission — dark card */}
         <Reveal>
           <article className="group relative flex h-full flex-col justify-between overflow-hidden rounded-3xl border border-paper-line bg-white/50 p-9 sm:p-11">
-            <div className="pointer-events-none absolute -left-16 -top-16 h-48 w-48 rounded-full bg-signal/10 blur-3xl transition-all duration-700 group-hover:bg-signal/20" />
+            <div className="pointer-events-none absolute -left-16 -top-16 h-48 w-48 rounded-full bg-signal/20 opacity-50 blur-3xl transition-opacity duration-700 group-hover:opacity-100" />
             <div className="relative">
               <span className="eyebrow text-signal">Our Mission</span>
               <p className="mt-8 font-display text-[clamp(1.15rem,0.95rem+0.55vw,1.4rem)] font-700 leading-[1.4] tracking-tight text-ink">
@@ -28,7 +28,7 @@ export function MissionVision() {
         {/* Vision — cold card */}
         <Reveal delay={0.12}>
           <article className="group relative flex h-full flex-col justify-between overflow-hidden rounded-3xl border border-cold/20 bg-gradient-to-br from-cold/[0.08] to-transparent p-9 sm:p-11">
-            <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-cold/10 blur-3xl transition-all duration-700 group-hover:bg-cold/20" />
+            <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-cold/20 opacity-50 blur-3xl transition-opacity duration-700 group-hover:opacity-100" />
             <div className="relative">
               <span className="eyebrow text-cold">Our Vision</span>
               <p className="mt-8 font-display text-[clamp(1.15rem,0.95rem+0.55vw,1.4rem)] font-700 leading-[1.4] tracking-tight text-ink">

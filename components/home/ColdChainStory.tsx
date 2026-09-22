@@ -134,7 +134,28 @@ export function ColdChainStory() {
             whileInView={{ rotate: 10, x: 24 }}
             viewport={{ once: true, amount: 0.4 }}
             transition={{ duration: 0.9, delay: 0.15, ease }}
-            className="absolute right-14 top-3 z-0 h-[88%] w-[72%] origin-bottom-right hover:z-30 sm:right-0"
+            /* The inset goes back at lg, and only there.
+
+               This card fans out to the right: rotate(10deg) about its
+               bottom-right corner throws the top-right corner sideways by
+               h*sin(10deg), and the card is 88% of a fixed 460px, so that is
+               70px — plus the 24px the animation translates it. About 94px of
+               overhang beyond the container's right edge, at every width from
+               sm up, because the height is fixed.
+
+               What varies is the room available for it, which is the shell's
+               side padding plus whatever slack mx-auto leaves in the grid
+               column. At 1280 that is 108px and the overhang fits. At 1024 the
+               two-column grid gives each column 433px — narrower than the
+               container's own 460px cap — so mx-auto has no slack to give and
+               only the 51px of shell padding is left. The card ran 43px past
+               the viewport and the section's overflow clip cut it off.
+
+               Putting the base inset back for that band alone brings the
+               overhang to 1011px at 1024, inside the viewport, and xl restores
+               the full fan the moment the column is wide enough to hold it.
+               Nothing is resized and the animation is untouched. */
+            className="absolute right-14 top-3 z-0 h-[88%] w-[72%] origin-bottom-right hover:z-30 sm:right-0 lg:right-14 xl:right-0"
           >
             <FlipCard
               image={images.warehouseRacking}

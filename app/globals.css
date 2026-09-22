@@ -18,8 +18,10 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* No `scroll-behavior: smooth`: ScrollTrigger jumps the scroll position on
+   refresh, and native smoothing animates those jumps, so the hero's progress
+   briefly reads wrong. The two scrollIntoView calls pass behavior themselves. */
 html {
-  scroll-behavior: smooth;
   /* Firefox */
   scrollbar-width: none;
 }

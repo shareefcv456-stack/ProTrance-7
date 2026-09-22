@@ -42,7 +42,7 @@ export function Header() {
           rounded-module composition of the home page. */}
       <header className="fixed inset-x-0 top-0 z-50 px-3 pt-3 sm:px-5 sm:pt-4 [padding-left:max(0.75rem,env(safe-area-inset-left))] [padding-right:max(0.75rem,env(safe-area-inset-right))] [padding-top:max(0.75rem,env(safe-area-inset-top))]">
         <div
-          className={`mx-auto flex h-14 max-w-shell items-center justify-between rounded-2xl border border-paper-line bg-paper/90 px-3.5 backdrop-blur-md sm:h-16 transition-shadow duration-500 ease-smooth sm:px-6 ${
+          className={`mx-auto flex h-14 max-w-shell items-center justify-between rounded-2xl border border-paper-line bg-paper/[0.96] px-3.5 sm:h-16 transition-shadow duration-500 ease-smooth sm:px-6 ${
             scrolled
               ? "shadow-[0_18px_45px_-28px_rgba(39,39,39,0.45)]"
               : "shadow-none"
@@ -148,7 +148,7 @@ export function Header() {
                dark and the one already behind every other dark section, so
                the drawer reads as the same site. Swap the token here if you
                want it cooler. */
-            className="fixed inset-0 z-[100] flex h-full min-h-screen w-full flex-col overflow-y-auto overscroll-contain bg-ink/95 backdrop-blur-md pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] md:hidden"
+            className="fixed inset-0 z-[100] flex h-full min-h-screen w-full flex-col overflow-y-auto overscroll-contain bg-ink/[0.98] pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] md:hidden"
           >
             {/* Top row: logo left, close right, both on the same 24px gutter
                 as everything below. The button keeps a 44px tap target and is

@@ -502,11 +502,20 @@ export function HomeHero() {
                   the bottom as one group, and self-start keeps the pill at
                   its content width instead of stretching across the column
                   the way a flex child otherwise would. */}
+              {/* Reveal order follows the layout, top to bottom: badge, CTAs,
+                  cards. Every one of these reserves its space while it is at
+                  opacity 0 — that is what keeps the column from jumping — so
+                  the order is what decides whether that space reads as empty.
+                  The badge used to arrive last (0.95s) and the cards after
+                  the CTAs, which left the buttons floating in a blank band
+                  with the badge's slot above them and the cards' below. In
+                  document order each item lands directly under one that is
+                  already visible. Same 0.7–1.1s window, same opacity + y. */}
               <m.div
                 initial={reduce ? undefined : { opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.95, ease }}
-                className="mb-4 mt-auto inline-flex self-start items-center gap-2.5 rounded-full bg-paper/95 py-2.5 pl-3 pr-4 shadow-lg backdrop-blur"
+                transition={{ duration: 0.6, delay: 0.7, ease }}
+                className="mb-4 mt-auto inline-flex self-start items-center gap-2.5 rounded-full bg-paper/95 py-2.5 pl-3 pr-4 shadow-lg"
               >
                 <span className="flex h-6 w-6 items-center justify-center rounded-full bg-accent">
                   <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -527,7 +536,7 @@ export function HomeHero() {
               <m.div
                 initial={reduce ? undefined : { opacity: 0, y: 18 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.7, delay: 0.7, ease }}
+                transition={{ duration: 0.7, delay: 0.8, ease }}
                 className="relative z-50 flex flex-wrap items-center gap-3"
               >
                 <Link
@@ -539,7 +548,13 @@ export function HomeHero() {
                   // static pages; fetching them on click costs a few hundred
                   // ms once, against a slower hero for everybody.
                   prefetch={false}
-                  className="group inline-flex items-center gap-2.5 rounded-lg bg-accent px-7 py-3.5 text-sm font-semibold text-ink transition-all duration-300 ease-smooth hover:bg-paper active:scale-[0.98]"
+                  // Below sm both CTAs share one row. At px-7 the pair needed
+                  // 335px against a 334px column at 390 (304 at 360), so
+                  // "Explore services" wrapped onto its own line and left a
+                  // 60px band under the buttons. px-4 fits them with room to
+                  // spare; grow + basis-auto lets them fill the row evenly and
+                  // still wrap, rather than overflow, on anything narrower.
+                  className="group inline-flex grow basis-auto items-center justify-center gap-2.5 whitespace-nowrap rounded-lg bg-accent px-4 py-3.5 text-sm font-semibold text-ink transition-all duration-300 ease-smooth hover:bg-paper active:scale-[0.98] sm:grow-0 sm:px-7"
                 >
                   Contact us
                   <svg
@@ -560,7 +575,7 @@ export function HomeHero() {
                 <Link
                   href="/services"
                   prefetch={false}
-                  className="inline-flex items-center rounded-lg border border-white/30 px-7 py-3.5 text-sm font-semibold text-white transition-colors duration-300 ease-smooth hover:border-white/70 hover:bg-white/[0.06]"
+                  className="inline-flex grow basis-auto items-center justify-center whitespace-nowrap rounded-lg border border-white/30 px-4 py-3.5 text-sm font-semibold text-white transition-colors duration-300 ease-smooth hover:border-white/70 hover:bg-white/[0.06] sm:grow-0 sm:px-7"
                 >
                   Explore services
                 </Link>
@@ -591,8 +606,8 @@ export function HomeHero() {
                     key={chip.title}
                     initial={reduce ? undefined : { opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.65, delay: 0.85 + i * 0.12, ease }}
-                    className="flex flex-row items-center gap-2.5 rounded-2xl border border-white/20 bg-white/[0.10] p-2 shadow-[0_8px_32px_-12px_rgba(0,0,0,0.6)] backdrop-blur-md sm:flex-col sm:items-stretch sm:gap-0 sm:p-5"
+                    transition={{ duration: 0.65, delay: 0.9 + i * 0.1, ease }}
+                    className="flex flex-row items-center gap-2.5 rounded-2xl border border-white/20 bg-ink/60 bg-[linear-gradient(160deg,rgba(255,255,255,0.14),rgba(255,255,255,0.04))] p-2 shadow-[0_8px_32px_-12px_rgba(0,0,0,0.6)] sm:flex-col sm:items-stretch sm:gap-0 sm:p-5"
                   >
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 text-accent sm:h-10 sm:w-10">
                       <svg

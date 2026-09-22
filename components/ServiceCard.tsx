@@ -32,7 +32,12 @@ export function ServiceCard({
       whileInView={reduce ? {} : { opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-8% 0px" }}
       transition={{ duration: 0.6, delay: (index % 3) * 0.08, ease: [0.16, 1, 0.3, 1] }}
-      className={`group relative flex h-full flex-col overflow-hidden rounded-2xl border p-7 transition-all duration-500 ease-smooth hover:-translate-y-1.5 ${
+      // The lift belongs to framer, which already owns this element's
+      // transform. A CSS `hover:-translate-y` lost to framer's inline
+      // `transform: none`, and `transition-all` re-smoothed every transform
+      // framer wrote during the entrance, so the reveal trailed ~0.5s late.
+      whileHover={reduce ? undefined : { y: -6, transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] } }}
+      className={`group relative flex h-full flex-col overflow-hidden rounded-2xl border p-7 transition-[border-color,box-shadow] duration-500 ease-smooth ${
         light
           ? "border-paper-line bg-white/60 hover:border-signal-deep/40 hover:shadow-[0_24px_60px_-30px_rgba(15,22,19,0.35)]"
           : "border-asphalt-line bg-asphalt-soft/40 hover:border-signal/40"

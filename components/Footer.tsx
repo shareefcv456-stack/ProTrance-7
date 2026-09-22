@@ -20,8 +20,27 @@ function ColumnHeading({ children }: { children: ReactNode }) {
   );
 }
 
+/* Tap area, not type size.
+
+   These were 38x28: a 14px line box with 4px of padding, which is a
+   comfortable click with a mouse and a miss with a thumb. The text is
+   untouched — the padding is what grows, to a 44px-tall target, and the
+   min-width covers the short labels ("Home" is 38px of glyphs).
+
+   The lists drop their mobile gap in the same change. Left alone, 24px of new
+   padding on top of a 10px gap would have pushed every column down; taking the
+   gap out means the pitch goes from 38px to 44px and the footer grows by six
+   pixels a row rather than sixteen. Adjacent targets sit flush, which is what
+   a tap list should be — there is no dead band between them to land in, and
+   no overlap either.
+
+   The compact density comes back at lg, not md. 768 and 820 are tablets —
+   md is where the footer's grid changes, not where fingers stop being the
+   input — so the band from md up to lg keeps the 44px targets and only a
+   mouse-width viewport gets py-1 and the 6px list gap back. Desktop is
+   exactly what it was. */
 const linkClass =
-  "inline-flex py-1 text-sm text-grey-400 transition-colors duration-300 hover:text-accent";
+  "inline-flex min-w-[44px] items-center py-3 text-sm text-grey-400 transition-colors duration-300 hover:text-accent lg:min-w-0 lg:py-1";
 
 export function Footer() {
   return (
@@ -68,7 +87,7 @@ export function Footer() {
           {/* Explore */}
           <div>
             <ColumnHeading>Explore</ColumnHeading>
-            <ul className="mt-4 space-y-2.5 md:mt-5 md:space-y-1.5">
+            <ul className="mt-4 md:mt-5 lg:space-y-1.5">
               {nav.map((item) => (
                 <li key={item.href}>
                   <Link href={item.href} prefetch={false} className={linkClass}>
@@ -82,7 +101,7 @@ export function Footer() {
           {/* Services */}
           <div>
             <ColumnHeading>Services</ColumnHeading>
-            <ul className="mt-4 space-y-2.5 md:mt-5 md:space-y-1.5">
+            <ul className="mt-4 md:mt-5 lg:space-y-1.5">
               {footerServices.map((s) => (
                 <li key={s.id}>
                   <Link href="/services" prefetch={false} className={linkClass}>
@@ -107,7 +126,7 @@ export function Footer() {
                 `md:block` drops the flex context, which is what lets
                 `md:space-y-1.5` apply again and puts every item back on its
                 own line exactly as before. */}
-            <ul className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm md:mt-5 md:block md:space-y-1.5">
+            <ul className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm md:mt-5 md:block lg:space-y-1.5">
               {company.phones.mobile.map((p, i) => (
                 <li key={p} className="flex items-center md:block">
                   {i > 0 && (
@@ -117,7 +136,7 @@ export function Footer() {
                   )}
                   <a
                     href={`tel:+91${p}`}
-                    className="inline-flex py-1 text-grey-400 transition-colors duration-300 hover:text-accent"
+                    className="inline-flex items-center py-3 text-grey-400 transition-colors duration-300 hover:text-accent lg:py-1"
                   >
                     +91 {p}
                   </a>
@@ -126,7 +145,7 @@ export function Footer() {
               <li className="basis-full">
                 <a
                   href={`mailto:${company.email}`}
-                  className="inline-flex break-all py-1 text-grey-400 transition-colors duration-300 hover:text-accent"
+                  className="inline-flex break-all items-center py-3 text-grey-400 transition-colors duration-300 hover:text-accent lg:py-1"
                 >
                   {company.email}
                 </a>

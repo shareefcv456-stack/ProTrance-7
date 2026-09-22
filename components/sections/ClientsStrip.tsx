@@ -59,7 +59,7 @@ export function ClientsStrip() {
             <Reveal key={client.name} delay={i * 0.1}>
               <article className="group relative flex h-full flex-col justify-between overflow-hidden rounded-2xl border border-paper-line bg-white/40 p-7 transition-all duration-500 ease-smooth hover:-translate-y-1 hover:border-signal/40">
                 {/* hover glow */}
-                <div className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-signal/0 blur-3xl transition-all duration-500 group-hover:bg-signal/15" />
+                <div className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-signal/15 opacity-0 blur-3xl transition-opacity duration-500 group-hover:opacity-100" />
 
                 <div className="relative">
                   <span className="font-mono text-[0.6rem] uppercase tracking-[0.2em] text-signal">
