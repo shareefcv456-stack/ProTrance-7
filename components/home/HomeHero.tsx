@@ -111,6 +111,21 @@ function band(i: number, n: number): [number[], number[]] {
   return [input, [0, 1, 1, 0]];
 }
 
+/** Where the badge, CTAs and cards come in: the final beat, as the truck
+    finishes reversing into the bay and its rear doors swing open (0.96 in
+    HeroScene). Until then the story has the screen to itself. They go again
+    at the same point on the way back, read off the same eased progress the
+    scene uses, so they stay in step with it rather than with the raw
+    scroll. Opacity and transform only — every element keeps its box. */
+const UI_AT = 0.96;
+const UI_OUT_AT = 0.955;
+/** Reveal stagger, top to bottom. Hiding runs together and quicker. */
+const uiTransition = (show: boolean, at: number, duration: number) => ({
+  duration: show ? duration : 0.35,
+  delay: show ? at : 0,
+  ease,
+});
+
 /** Which stage a given progress is in. */
 function stageAt(p: number) {
   let i = 0;
@@ -365,10 +380,15 @@ export function HomeHero() {
   // scroll — which is nothing like the per-frame updates the scene ref
   // exists to avoid.
   const [stage, setStage] = useState(0);
+  const [uiIn, setUiIn] = useState(false);
   useMotionValueEvent(eased, "change", (v) => {
     const next = stageAt(v);
     setStage((cur) => (cur === next ? cur : next));
+    // Hysteresis, so a scroll parked right on the line cannot flicker it.
+    setUiIn((cur) => (cur ? v >= UI_OUT_AT : v >= UI_AT));
   });
+  // Reduced motion has no story to wait for: everything is there at once.
+  const showUi = reduce || uiIn;
   const copy = reduce ? chapters[0] : chapters[stage];
 
   // No transform on this panel, and specifically no scale. R3F measures its
@@ -582,11 +602,11 @@ export function HomeHero() {
                   the CTAs, which left the buttons floating in a blank band
                   with the badge's slot above them and the cards' below. In
                   document order each item lands directly under one that is
-                  already visible. Same 0.7–1.1s window, same opacity + y. */}
+                  already visible. Held until the story's final beat — see UI_AT. */}
               <m.div
                 initial={reduce ? undefined : { opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.7, ease }}
+                animate={showUi ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
+                transition={uiTransition(showUi, 0, 0.6)}
                 className="mb-4 mt-auto inline-flex self-start items-center gap-2.5 rounded-full bg-paper/95 py-2.5 pl-3 pr-4 shadow-lg"
               >
                 <span className="flex h-6 w-6 items-center justify-center rounded-full bg-accent">
@@ -606,9 +626,15 @@ export function HomeHero() {
               </m.div>
 
               <m.div
-                initial={reduce ? undefined : { opacity: 0, y: 18 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.7, delay: 0.8, ease }}
+                // pointerEvents rides the same delay as the fade, so the
+                // buttons cannot be clicked while they are still invisible.
+                initial={reduce ? undefined : { opacity: 0, y: 18, pointerEvents: "none" }}
+                animate={
+                  showUi
+                    ? { opacity: 1, y: 0, pointerEvents: "auto" }
+                    : { opacity: 0, y: 18, pointerEvents: "none" }
+                }
+                transition={uiTransition(showUi, 0.1, 0.7)}
                 className="relative z-50 flex flex-wrap items-center gap-3"
               >
                 <Link
@@ -677,8 +703,8 @@ export function HomeHero() {
                   <m.div
                     key={chip.title}
                     initial={reduce ? undefined : { opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.65, delay: 0.9 + i * 0.1, ease }}
+                    animate={showUi ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
+                    transition={uiTransition(showUi, 0.2 + i * 0.1, 0.65)}
                     className="flex flex-row items-center gap-2.5 rounded-2xl border border-white/20 bg-ink/60 bg-[linear-gradient(160deg,rgba(255,255,255,0.14),rgba(255,255,255,0.04))] p-2 shadow-[0_8px_32px_-12px_rgba(0,0,0,0.6)] sm:flex-col sm:items-stretch sm:gap-0 sm:p-5"
                   >
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 text-accent sm:h-10 sm:w-10">
