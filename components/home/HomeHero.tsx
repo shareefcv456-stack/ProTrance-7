@@ -1,19 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import dynamic from "next/dynamic";
 import Link from "next/link";
 import {
   AnimatePresence,
   m,
   useMotionValueEvent,
-  useSpring,
+  useAnimationFrame,
   useMotionValue,
   useReducedMotion,
   useTransform,
   type MotionValue,
 } from "framer-motion";
 import { StaggerText } from "@/components/motion/StaggerText";
+import { pace, type Pace } from "@/lib/pace";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
@@ -29,7 +29,12 @@ const ease = [0.22, 1, 0.36, 1] as const;
 const LQIP =
   "data:image/webp;base64,UklGRpIAAABXRUJQVlA4IIYAAAAQBQCdASogABQAPt1cp0yopSOiMBgMARAbiWUAwoA0gVWKKZs9XtT7u4kycaYyqEBAAPulyxnyxvev5EJ9BJLce8oo5NPAZPNQGcZR0ctLcHqHVdkAnjFsDUOGZTNqaJJar56sTVFD7HkS2DdirLnxv/p3HK05o+DeFz/dRVgXZpDurHAAAA==";
 
-const HeroScene = dynamic(() => import("./HeroScene"), { ssr: false });
+/* Imported by hand, after the first paint, rather than through next/dynamic:
+   Next preloads a dynamic() chunk from the page's own payload, so three.js,
+   R3F and the scene (~300k over the wire) were requested at 0.25s, racing the
+   hero copy on a slow connection. PageSpeed's simulated LCP counts every
+   request that starts before the LCP paint, and those were most of its 4.4s. */
+type SceneComponent = typeof import("./HeroScene").default;
 
 /** Serve phones the poster instead of the WebGL hero.
  *
@@ -217,10 +222,15 @@ export function HomeHero() {
   // index ease on the same kind of curve instead of snapping frame-for-frame
   // with the raw scroll position while the scene glides.
   //
-  // A spring here rather than ScrollTrigger's scrub: scrub smooths the
+  // Paced here rather than with ScrollTrigger's scrub: scrub smooths the
   // driver, which would land on top of the scene's own damping and make the
-  // camera mushy. This smooths only the readers.
-  const eased = useSpring(scroll, { stiffness: 140, damping: 32, mass: 0.4 });
+  // camera mushy. This smooths only the readers, on the scene's own curve.
+  const eased = useMotionValue(0);
+  const paced = useRef<Pace>({ value: 0, rate: 0 });
+  useAnimationFrame((_, delta) => {
+    // Returns false once settled, so an idle page does no motion-value work.
+    if (pace(paced.current, scroll.get(), delta / 1000)) eased.set(paced.current.value);
+  });
   // The gradient backdrop holds until the canvas has drawn a real frame.
   // Fading on a timer instead meant a slow GPU washed an empty canvas over
   // the backdrop before there was anything in it.
@@ -249,8 +259,70 @@ export function HomeHero() {
   const showScene = !reduce && !(SKIP_3D_ON_MOBILE && phone);
   const onReady = useCallback(() => setPainted(true), []);
 
+  /* Nothing heavy starts until the hero's first frame has been presented.
+
+     The 3D chunks and GSAP used to be requested during hydration, and on
+     PageSpeed's mobile profile the headline and paragraph (the LCP element)
+     waited behind them. The poster is the scene's own first frame, so the
+     canvas arriving a moment later changes nothing visible. */
+  const [afterPaint, setAfterPaint] = useState(false);
   useEffect(() => {
-    if (reduce) return;
+    if (!showScene) return;
+    let idle = 0;
+    let fired = false;
+    let observer: PerformanceObserver | undefined;
+    const go = () => {
+      if (fired) return;
+      fired = true;
+      observer?.disconnect();
+      // An idle slot after the paint, capped so a busy page cannot hold it off.
+      const ric = window.requestIdleCallback ?? ((cb: () => void) => window.setTimeout(cb, 1));
+      idle = ric(() => setAfterPaint(true), { timeout: 600 });
+    };
+    // Keyed to the browser's own first-contentful-paint entry, not to
+    // requestAnimationFrame: on a cold start rAF runs frames that are never
+    // presented, and it fired a full second before the text was on screen.
+    // The hero copy is the LCP element and paints in that same frame.
+    if (PerformanceObserver.supportedEntryTypes?.includes("paint")) {
+      observer = new PerformanceObserver((list) => {
+        if (list.getEntriesByName("first-contentful-paint").length) go();
+      });
+      observer.observe({ type: "paint", buffered: true });
+    } else {
+      // No paint timing: two frames is the best available stand-in.
+      requestAnimationFrame(() => requestAnimationFrame(go));
+    }
+    // A tab opened in the background never records a first paint at all.
+    // Only a backstop: a cold start in the lab takes up to four seconds to
+    // present its first frame and must not be cut short.
+    const backstop = window.setTimeout(go, 6000);
+    const onShow = () => {
+      if (document.visibilityState === "visible") requestAnimationFrame(() => requestAnimationFrame(go));
+    };
+    if (document.visibilityState === "hidden") document.addEventListener("visibilitychange", onShow);
+    return () => {
+      observer?.disconnect();
+      window.clearTimeout(backstop);
+      document.removeEventListener("visibilitychange", onShow);
+      (window.cancelIdleCallback ?? window.clearTimeout)(idle);
+    };
+  }, [showScene]);
+
+  const [HeroScene, setHeroScene] = useState<SceneComponent | null>(null);
+  useEffect(() => {
+    if (!afterPaint) return;
+    let cancelled = false;
+    void import("./HeroScene").then((mod) => {
+      if (!cancelled) setHeroScene(() => mod.default);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [afterPaint]);
+
+  useEffect(() => {
+    // Waits for the first paint with the scene chunk, for the same reason.
+    if (reduce || !afterPaint) return;
     // Checked here rather than from the `phone` state above, and that matters:
     // state resolves after the first render, by which point this effect has
     // already fired and the import is in flight. Querying synchronously means
@@ -285,7 +357,7 @@ export function HomeHero() {
       cancelled = true;
       trigger?.kill();
     };
-  }, [reduce, scroll]);
+  }, [reduce, scroll, afterPaint]);
 
   // Which chapter's copy is showing. This is React state rather than a
   // MotionValue on purpose: the text has to change as a discrete swap, not a
@@ -391,7 +463,7 @@ export function HomeHero() {
                   className="absolute inset-0 h-full w-full object-cover"
                 />
               </picture>
-              {showScene && (
+              {showScene && HeroScene && (
                 <m.div
                   className="absolute inset-0"
                   initial={{ opacity: 0 }}

@@ -36,6 +36,7 @@ function useEffectsChunk(enabled: boolean) {
 }
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
+import { pace, type Pace } from "@/lib/pace";
 
 /* ── Scroll-driven 3D hero ───────────────────────────────────────────────
    Four phases along one continuous drive. The truck stays at the origin and
@@ -5200,7 +5201,10 @@ function precompile(
 
      So on those drivers the materials compile as they are first drawn. That
      is a few small hitches spread through the scroll instead of one long
-     freeze before the hero appears, and it is the better trade every time. */
+     freeze before the hero appears, and it is the better trade every time.
+
+     A software rasteriser never reaches this: HeroScene renders nothing
+     there. See probeDevice. */
   const parallel = gl.getContext().getExtension("KHR_parallel_shader_compile");
   if (!parallel) return Promise.resolve();
 
@@ -5231,7 +5235,6 @@ function Rig({
   quality,
   dpr,
   startDpr,
-  calibrate,
   tier,
   onDpr,
   onTier,
@@ -5244,11 +5247,6 @@ function Rig({
   /** Where the ratio begins — the probe may start a weak device below the
       ceiling so it never has to render at one it cannot hold. */
   startDpr: number;
-  /** False when the device probe has already placed the ratio at its floor,
-      leaving the opening search nothing to look for. The reveal then waits
-      only on precompile, which on those machines is most of a second saved
-      from a poster nobody wants to keep looking at. */
-  calibrate: boolean;
   /** How much rendering work has been shed. See Tier. */
   tier: Tier;
   onDpr: (dpr: number) => void;
@@ -5289,8 +5287,10 @@ function Rig({
   // ScrollTrigger writes raw wheel deltas, which arrive in steps. Everything
   // downstream reads this eased copy instead, so camera, world slide, doors
   // and lighting all glide off the same value and stay in agreement — easing
-  // only the camera would let it lag its own scenery.
+  // only the camera would let it lag its own scenery. Paced by the same
+  // curve as the DOM copy (see lib/pace), so text and scene stay in step.
   const eased = useRef(0);
+  const paced = useRef<Pace>({ value: 0, rate: 0 });
 
   useProceduralEnv();
   // Tier 1 drops post-processing. The chunk is never even requested if the
@@ -5365,7 +5365,8 @@ function Rig({
   }, []);
 
   useFrame(({ camera, scene, clock, gl }, delta) => {
-    eased.current += (clamp01(progress.current) - eased.current) * (1 - Math.pow(0.002, delta));
+    pace(paced.current, clamp01(progress.current), delta);
+    eased.current = paced.current.value;
     const p = eased.current;
     const { i, t } = segment(p, SHOTS.length);
     const now = clock.elapsedTime;
@@ -5595,8 +5596,7 @@ function Rig({
       // that never lifts. 2.5s rather than 4: on a healthy device the search
       // is done in a third of a second and this never fires, so the only
       // machines it applies to are the ones it is too long for.
-      const searched = calibrated.current || !calibrate;
-      if ((compiled.current && searched) || now - firstFrameAt.current > 2.5) {
+      if ((compiled.current && calibrated.current) || now - firstFrameAt.current > 2.5) {
         painted.current = true;
         onReady?.();
       }
@@ -5742,13 +5742,8 @@ function HeroScene({
   // Level of detail is picked once at mount. Phones get fewer containers,
   // a coarser sea, no shadows and a capped pixel ratio — the frame budget
   // there is spent on holding 60fps, not on geometry nobody can see.
-  //
-  // A software rasteriser takes the same path, and for the same reason: it is
-  // not a GPU, whatever the window width says. That is the one capability
-  // signal precise enough to act on before a frame exists — see probeDevice.
   const quality: Quality = useMemo(() => {
     if (typeof window === "undefined") return "high";
-    if (device.software) return "low";
     return window.matchMedia("(max-width: 900px), (pointer: coarse)").matches
       ? "low"
       : "high";
@@ -5776,14 +5771,11 @@ function HeroScene({
 
      Measuring is the right way to decide this, but a device only learns it
      cannot hold the ceiling by rendering at the ceiling, and on the machines
-     that cannot, those frames are seconds long. So the two cases the probe can
-     name are started where the search would have left them: a software
-     rasteriser at the floor, a genuinely small machine one step down. Neither
-     loses anything it was going to keep — and everything else, which is almost
-     everything, still starts at full quality. */
+     that cannot, those frames are seconds long. So a genuinely small machine
+     starts one step down, where the search would have left it — and everything
+     else, which is almost everything, still starts at full quality. */
   const startDpr = useMemo(() => {
     const floor = dprFloor(quality === "low");
-    if (device.software) return floor;
     if (device.modest) return Math.max(floor, maxDpr - DPR_STEP);
     return maxDpr;
   }, [device, quality, maxDpr]);
@@ -5800,6 +5792,14 @@ function HeroScene({
     () => setTier((t) => (t < 2 ? ((t + 1) as Tier) : t)),
     [],
   );
+
+  /* No GPU, no scene. A software rasteriser compiles every shader
+     synchronously on first draw (three.js blocks on LINK_STATUS for each of
+     them: ten seconds of frozen main thread, measured) and then spends
+     100-1200ms per frame after that — a slideshow nobody can scroll through.
+     The poster is the scene's own first frame and stays up, and the chapter
+     copy is driven by scroll, not by the canvas, so the story still reads. */
+  if (device.software) return null;
 
   return (
     <Canvas
@@ -5848,7 +5848,6 @@ function HeroScene({
         quality={quality}
         dpr={maxDpr}
         startDpr={startDpr}
-        calibrate={!device.software}
         tier={tier}
         onDpr={setDpr}
         onTier={dropTier}
