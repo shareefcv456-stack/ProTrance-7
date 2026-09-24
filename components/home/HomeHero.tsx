@@ -126,6 +126,10 @@ const uiTransition = (show: boolean, at: number, duration: number) => ({
   ease,
 });
 
+/** The chapter copy's resting state. One object, so the entry can be told
+    apart from the exit when an animation reports that it has finished. */
+const COPY_IN = { opacity: 1, y: 0 };
+
 /** Which stage a given progress is in. */
 function stageAt(p: number) {
   let i = 0;
@@ -379,13 +383,42 @@ export function HomeHero() {
   // continuous interpolation, and it fires four times across the whole
   // scroll — which is nothing like the per-frame updates the scene ref
   // exists to avoid.
+  //
+  // Stepped, one chapter at a time. The swap is an exit plus an entry, 0.84s
+  // together, and the story can cross the whole of chapter 03 in half a
+  // second — so jumping straight to wherever the story had got to meant a
+  // fling showed 02 and then 04. Now the copy walks 02 → 03 → 04 (or back),
+  // each step waiting for the previous copy to land, and catches up with
+  // the scene a moment later rather than cutting past a beat.
   const [stage, setStage] = useState(0);
+  const shown = useRef(0);
+  const target = useRef(0);
+  const swapping = useRef(false);
+  const stepStage = useCallback(() => {
+    if (shown.current === target.current) {
+      swapping.current = false;
+      return;
+    }
+    shown.current += Math.sign(target.current - shown.current);
+    swapping.current = true;
+    setStage(shown.current);
+  }, []);
   const [uiIn, setUiIn] = useState(false);
+  const uiShown = useRef(false);
+  // Runs every frame the story moves, so it only touches React when a value
+  // actually changes.
   useMotionValueEvent(eased, "change", (v) => {
     const next = stageAt(v);
-    setStage((cur) => (cur === next ? cur : next));
+    if (next !== target.current) {
+      target.current = next;
+      if (!swapping.current) stepStage();
+    }
     // Hysteresis, so a scroll parked right on the line cannot flicker it.
-    setUiIn((cur) => (cur ? v >= UI_OUT_AT : v >= UI_AT));
+    const ui = uiShown.current ? v >= UI_OUT_AT : v >= UI_AT;
+    if (ui !== uiShown.current) {
+      uiShown.current = ui;
+      setUiIn(ui);
+    }
   });
   // Reduced motion has no story to wait for: everything is there at once.
   const showUi = reduce || uiIn;
@@ -544,9 +577,16 @@ export function HomeHero() {
                   <m.div
                     key={stage}
                     initial={reduce ? false : { opacity: 0, y: 16 }}
-                    animate={{ opacity: 1, y: 0 }}
+                    animate={COPY_IN}
                     exit={reduce ? undefined : { opacity: 0, y: -12 }}
-                    transition={{ duration: 0.42, ease }}
+                    // Quicker while the copy is still catching up with the
+                    // scene after a fling, so the in-between chapter still
+                    // shows but the copy lands with the story instead of a
+                    // second after it. A single step keeps the full swap.
+                    transition={{ duration: target.current !== stage ? 0.2 : 0.42, ease }}
+                    // The entry landing — not the exit, which reports here
+                    // too — is what lets the next chapter step on.
+                    onAnimationComplete={(d) => d === COPY_IN && stepStage()}
                   >
                     {!reduce && (
                       <span

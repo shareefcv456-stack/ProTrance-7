@@ -118,7 +118,8 @@ export function ServiceRows() {
                           src={group.cutout.src}
                           alt={group.cutout.alt}
                           fill
-                          sizes="(min-width: 1024px) 30vw, (min-width: 640px) 45vw, 90vw"
+                          // Measured: ~355px wide from xl up, where 30vw asked for up to 2x that.
+                          sizes="(min-width: 1280px) 360px, (min-width: 1024px) 30vw, (min-width: 640px) 45vw, 90vw"
                           className={`drop-shadow-[0_24px_30px_rgba(0,0,0,0.45)] ${
                             group.cutout.imgClass ?? ""
                           }`}

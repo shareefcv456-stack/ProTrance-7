@@ -106,7 +106,8 @@ export function WhyRows() {
                   src={img.src}
                   alt={active === i ? img.alt : ""}
                   fill
-                  sizes="(min-width: 1024px) 34vw, 100vw"
+                  // The frame is capped at 440px tall at 4:5 from lg, so never wider than 352px.
+                  sizes="(min-width: 1024px) 352px, 100vw"
                   className="object-cover transition-transform duration-500 ease-smooth group-hover:scale-[1.02]"
                 />
               </div>

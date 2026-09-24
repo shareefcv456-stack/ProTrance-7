@@ -1376,6 +1376,39 @@ function LightShafts({ alpha }: { alpha: MutableRefObject<number> }) {
   );
 }
 
+/** The pixel ratio this device last had to step down to, remembered.
+
+    The opening search measures the dock, and the yard is roughly twice the
+    work, so a device that is marginal at its ceiling finds out at the end of
+    the story and takes one resize there — measured at 83–151ms on a 2x
+    1440 panel, on every visit. Remembering where it ended up means that step
+    is paid once per device, not once per visit.
+
+    Keyed to the GPU, the quality path, the ceiling and the viewport's pixel
+    count, so a different screen or window size measures afresh. It expires
+    after a week, so one bad session (a busy machine, a thermal dip) cannot
+    hold a capable device down for good. Storage that throws — private mode,
+    blocked site data — just means no memory, which is the old behaviour. */
+const DPR_MEMORY_KEY = "protrans:hero-dpr";
+const DPR_MEMORY_MS = 7 * 24 * 60 * 60 * 1000;
+
+function recallDpr(key: string): number | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(DPR_MEMORY_KEY) ?? "null");
+    return v && v.key === key && Date.now() - v.at < DPR_MEMORY_MS && typeof v.dpr === "number" ? v.dpr : null;
+  } catch {
+    return null;
+  }
+}
+
+function rememberDpr(key: string, dpr: number) {
+  try {
+    localStorage.setItem(DPR_MEMORY_KEY, JSON.stringify({ key, dpr, at: Date.now() }));
+  } catch {
+    // No storage: nothing is remembered, and the next visit measures again.
+  }
+}
+
 /** Stop drawing once the hero has left the viewport.
 
     This is the scroll lag. The hero is a 380vh sticky section, so by the
@@ -1390,26 +1423,36 @@ function LightShafts({ alpha }: { alpha: MutableRefObject<number> }) {
     freeze the scene the moment you stopped moving. Visibility is the gate
     that costs nothing to be wrong about.
 
-    setFrameloop leaves a stopped loop stopped, so resuming needs the
-    invalidate to kick the next frame. */
-function PauseOffscreen() {
+    The loop mode is owned by HeroScene and handed to <Canvas frameloop>,
+    not set here with setFrameloop. That call did not stick: Canvas re-runs
+    configure() on every one of its renders and resets the loop to its
+    `frameloop` prop, which defaulted to "always" — so the first re-render
+    after the hero left (a pixel-ratio step, a re-measure) switched the loop
+    back on. Measured: 14k draw calls a second on a phone with the canvas
+    3000px above the viewport, the same as with it on screen. Same failure,
+    same fix, as the pixel ratio (see AdaptiveResolution).
+
+    A stopped loop stays stopped until something asks for a frame, so the
+    switch back on kicks the first one. */
+function PauseOffscreen({ onVisible }: { onVisible: (visible: boolean) => void }) {
   const gl = useThree((st) => st.gl);
-  const setFrameloop = useThree((st) => st.setFrameloop);
+  const frameloop = useThree((st) => st.frameloop);
   const invalidate = useThree((st) => st.invalidate);
 
   useEffect(() => {
     const io = new IntersectionObserver(
-      ([e]) => {
-        setFrameloop(e.isIntersecting ? "always" : "never");
-        if (e.isIntersecting) invalidate();
-      },
+      ([e]) => onVisible(e.isIntersecting),
       // Resume a little before it is actually visible, so the first frame
       // back is already drawn rather than arriving a frame late.
       { rootMargin: "200px" },
     );
     io.observe(gl.domElement);
     return () => io.disconnect();
-  }, [gl, setFrameloop, invalidate]);
+  }, [gl, onVisible]);
+
+  useEffect(() => {
+    if (frameloop === "always") invalidate();
+  }, [frameloop, invalidate]);
 
   return null;
 }
@@ -1559,18 +1602,39 @@ type DeviceProfile = {
   software: boolean;
   /** Small machine: start below the ceiling rather than at it. */
   modest: boolean;
+  /** A GPU family known to be weak for this scene: starts at the ratio
+      floor with bloom already off, rather than finding out on screen. */
+  weak: boolean;
+  /** Unmasked renderer string, or "" when the browser hides it. */
+  gpu: string;
 };
 
+/* GPU families, matched on the unmasked renderer string (ANGLE on Windows
+   reports e.g. "ANGLE (Intel, Intel(R) UHD Graphics 620 Direct3D11 ...)").
+
+   Deliberately narrow. Only families that are weak for a shadowed, bloomed
+   scene of this size are named; anything unrecognised — discrete NVIDIA and
+   AMD, Apple silicon, Intel Arc, current phones — keeps the full profile and
+   the measured calibration, which is the only thing that actually knows. */
+/** Intel HD/UHD (not Iris), Mali-4xx/T/G3x/G5x, Adreno 3xx–61x, PowerVR. */
+const WEAK_GPU =
+  /\b(?:U?HD Graphics(?! *Iris))\b|Mali-(?:4|T|G[35]\d)|Adreno \(TM\) (?:[345]\d\d|6[01]\d)|PowerVR/i;
+/** Iris / Iris Xe, AMD integrated Radeon, Adreno 62x+, Mali-G6x/G7x. */
+const MEDIUM_GPU =
+  /\bIris\b|Radeon(?:\(TM\))? (?:Vega|Graphics)|Adreno \(TM\) 6[2-9]\d|Mali-G[67]\d/i;
+
 function probeDevice(): DeviceProfile {
-  const fail: DeviceProfile = { software: false, modest: false };
+  const fail: DeviceProfile = { software: false, modest: false, weak: false, gpu: "" };
   if (typeof window === "undefined" || typeof document === "undefined") return fail;
 
   const nav = navigator as Navigator & { deviceMemory?: number };
   const cores = nav.hardwareConcurrency ?? 8;
   const memory = nav.deviceMemory ?? 8;
-  const modest = cores <= 2 || memory <= 2;
+  let modest = cores <= 2 || memory <= 2;
 
   let software = false;
+  let weak = false;
+  let gpu = "";
   try {
     const probe = document.createElement("canvas");
     const gl = probe.getContext("webgl2") ?? probe.getContext("webgl");
@@ -1580,6 +1644,9 @@ function probeDevice(): DeviceProfile {
         ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL) ?? "")
         : "";
       software = /swiftshader|llvmpipe|softpipe|basic render|software|微软/i.test(name);
+      weak = WEAK_GPU.test(name);
+      gpu = name;
+      if (MEDIUM_GPU.test(name)) modest = true;
       // Hand the context back rather than waiting for the GC to do it: there
       // are only so many per page, and the real one still has to be created.
       gl.getExtension("WEBGL_lose_context")?.loseContext();
@@ -1588,7 +1655,7 @@ function probeDevice(): DeviceProfile {
     // A blocked or unavailable context tells us nothing. Assume capable and
     // let the measuring loop find out, which is the old behaviour.
   }
-  return { software, modest };
+  return { software, modest, weak, gpu };
 }
 
 /** What the frame gives up once the pixel ratio has nothing left to give.
@@ -1679,6 +1746,9 @@ const CALIBRATE_MS = 850;
    which is most of what makes a scrolling frame cost more than a still one.
    The steps that remain are handled where they belong, by landing them in the
    gaps between gestures. */
+
+/** A queued change that sheds a Tier rather than moving the ratio. */
+const DEGRADE = -1;
 
 /** How still the scroll has to be before a change is allowed to land. */
 const IDLE_MS = 180;
@@ -1858,6 +1928,11 @@ function AdaptiveResolution({
 
     // How long the scroll has been still. ScrollTrigger writes `progress` on
     // every wheel or touch tick, so "unchanged" is exactly "not scrolling".
+    //
+    // Raw input, deliberately, not the paced story value. Waiting for the
+    // story to settle as well was tried and measured worse: at 1440 on a 2x
+    // panel a device that cannot hold its ratio while the story moves then
+    // drops 14–18 frames over the whole catch-up instead of taking one step.
     const p = progress.current;
     if (p !== lastP.current) {
       lastP.current = p;
@@ -1875,10 +1950,14 @@ function AdaptiveResolution({
       // budget, an eventual deadline.
       const dire = now - pendingAt.current > DIRE_DEADLINE_MS;
       if (fast || still || dire) {
-        current.current = pending.current;
+        const next = pending.current;
         pending.current = 0;
         committedAt.current = now;
-        onChange(current.current);
+        if (next === DEGRADE) onDegrade();
+        else {
+          current.current = next;
+          onChange(next);
+        }
         // The resize frame and the one after it are not measurements of
         // anything, so start the next window from scratch — but a short one.
         // The scene is already warm; only the framebuffer changed, and a full
@@ -1934,10 +2013,16 @@ function AdaptiveResolution({
       if (current.current <= floor) {
         // Nothing left in the ratio. Shed a tier of work instead — and only
         // then, which is what keeps a capable device at full quality.
+        //
+        // Queued like a ratio step rather than applied on the spot. Dropping
+        // the shadow pass flips every material's shadow defines, so each
+        // program recompiles on its next draw: done mid-gesture, that is a
+        // stall of the whole scene's shader set inside a scroll frame.
         if (canDegrade) {
           clean.current = 0;
           bad.current = 0;
-          onDegrade();
+          pending.current = DEGRADE;
+          pendingAt.current = now;
         }
         return;
       }
@@ -5238,6 +5323,7 @@ function Rig({
   tier,
   onDpr,
   onTier,
+  onVisible,
   onReady,
 }: {
   progress: MutableRefObject<number>;
@@ -5251,6 +5337,8 @@ function Rig({
   tier: Tier;
   onDpr: (dpr: number) => void;
   onTier: () => void;
+  /** Whether the canvas is on (or about to be on) screen. See PauseOffscreen. */
+  onVisible: (visible: boolean) => void;
   onReady?: () => void;
 }) {
   const painted = useRef(false);
@@ -5707,7 +5795,7 @@ function Rig({
         </group>
       </Suspense>
 
-      <PauseOffscreen />
+      <PauseOffscreen onVisible={onVisible} />
       <AdaptiveResolution
         max={dpr}
         start={startDpr}
@@ -5771,27 +5859,55 @@ function HeroScene({
 
      Measuring is the right way to decide this, but a device only learns it
      cannot hold the ceiling by rendering at the ceiling, and on the machines
-     that cannot, those frames are seconds long. So a genuinely small machine
-     starts one step down, where the search would have left it — and everything
-     else, which is almost everything, still starts at full quality. */
+     that cannot, those frames are seconds long. So a GPU family known to be
+     weak starts at the floor, a small or mid-range one a step down — where the
+     search would have left them — and everything else, which is almost
+     everything, still starts at full quality.
+
+     Never above the ceiling. On a 1x screen the high path's ceiling (1) sits
+     under its floor (1.25), and the plain max() here used to start a "modest"
+     machine at 1.25: more pixels than an unclassified one, not fewer. */
+  const dprKey = useMemo(
+    () =>
+      typeof window === "undefined"
+        ? ""
+        : `${device.gpu}|${quality}|${maxDpr}|${Math.round((window.innerWidth * window.innerHeight) / 1e5)}`,
+    [device, quality, maxDpr],
+  );
   const startDpr = useMemo(() => {
     const floor = dprFloor(quality === "low");
-    if (device.modest) return Math.max(floor, maxDpr - DPR_STEP);
-    return maxDpr;
-  }, [device, quality, maxDpr]);
+    let start = maxDpr;
+    if (device.weak) start = Math.min(maxDpr, floor);
+    else if (device.modest) start = Math.min(maxDpr, Math.max(floor, maxDpr - DPR_STEP));
+    const recalled = recallDpr(dprKey);
+    return recalled === null ? start : Math.min(start, Math.max(recalled, Math.min(maxDpr, floor)));
+  }, [device, quality, maxDpr, dprKey]);
 
   // The ratio actually in use. Owned here and handed to <Canvas dpr> so that
   // R3F's own re-apply of that prop (on every Canvas render) re-applies the
   // adaptive value instead of snapping back to the ceiling. Starts at the
   // ceiling; AdaptiveResolution moves it between its floor and maxDpr.
-  const [dpr, setDpr] = useState(startDpr);
+  const [dpr, setDprState] = useState(startDpr);
+  const setDpr = useCallback(
+    (next: number) => {
+      setDprState(next);
+      rememberDpr(dprKey, next);
+    },
+    [dprKey],
+  );
   /* How much rendering work has been shed, 0 = none. Only ever rises, and
      only when the pixel ratio has already bottomed out — see Tier. */
-  const [tier, setTier] = useState<Tier>(0);
+  // A weak GPU starts with bloom already shed (tier 1), so the composer
+  // chunk is never fetched and its targets never allocated there. Shadows
+  // stay; calibration drops them behind the poster if it has to.
+  const [tier, setTier] = useState<Tier>(() => (device.weak ? 1 : 0));
   const dropTier = useCallback(
     () => setTier((t) => (t < 2 ? ((t + 1) as Tier) : t)),
     [],
   );
+  // Owned here and passed as <Canvas frameloop>, like `dpr`, so a Canvas
+  // re-render cannot switch a paused loop back on. See PauseOffscreen.
+  const [visible, setVisible] = useState(true);
 
   /* No GPU, no scene. A software rasteriser compiles every shader
      synchronously on first draw (three.js blocks on LINK_STATUS for each of
@@ -5812,6 +5928,7 @@ function HeroScene({
       // shadow is crisp where the tyres meet the tarmac and soft twenty
       // metres out. A uniform-width penumbra is one of the strongest
       // "this is a game" tells there is.
+      frameloop={visible ? "always" : "never"}
       shadows={quality === "high" && tier < 2 ? "soft" : false}
       // Keyed to quality, not to pixel ratio.
       //
@@ -5841,6 +5958,14 @@ function HeroScene({
       // establishing shot while the fog band still ran to 700 — geometry
       // vanished at a hard plane instead of fading into the haze.
       camera={{ fov: 38, near: 0.5, far: 760, position: SHOTS[0].pos }}
+      // Production only: three's shader diagnostics fetch every new program's
+      // info logs and link status on first use, a synchronous round trip per
+      // program inside the first frames. Measured on a 4x-throttled phone:
+      // Lighthouse TBT 846–954ms with it, 829–833ms without. Development keeps
+      // the check, which is the only place a shader error can be introduced.
+      onCreated={({ gl }) => {
+        if (process.env.NODE_ENV === "production") gl.debug.checkShaderErrors = false;
+      }}
       aria-hidden
     >
       <RigMemo
@@ -5851,6 +5976,7 @@ function HeroScene({
         tier={tier}
         onDpr={setDpr}
         onTier={dropTier}
+        onVisible={setVisible}
         onReady={onReady}
       />
     </Canvas>
