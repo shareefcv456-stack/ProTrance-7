@@ -13,13 +13,11 @@ const FOLLOW = 4;
 /** 1/s. How quickly the speed itself changes. 4 × FOLLOW is critical
     damping — the fastest settle that never overshoots and runs backwards. */
 const ACCEL = 4 * FOLLOW;
-/** Progress per second, at most: ~2.9s for the whole story on a hard fling.
-    At 0.4 the Coastal run (0.70–0.86) went by in 0.4s and a fling read as
-    racing through the beats; 0.3 fixed that but took ~2.6s to settle after
-    a flick, which read as sluggish. 0.35 sits between them. The chapter copy
-    steps one beat at a time on its own (see HomeHero), so no beat is skipped
-    either way. */
-const MAX_RATE = 0.35;
+/** Progress per second, at most: ~4.5s for the whole story on a hard fling.
+    0.35 (~2.9s) still read as rushing through the beats, so this is paired
+    with a longer scroll runway in HomeHero. The chapter copy steps one beat
+    at a time on its own (see HomeHero), so no beat is skipped either way. */
+const MAX_RATE = 0.22;
 
 export type Pace = { value: number; rate: number };
 

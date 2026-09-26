@@ -7,6 +7,12 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      screens: {
+        // Short viewports: Windows laptops at 125–150% scaling land around
+        // 600–700px of visible height. The home hero compacts under these.
+        short: { raw: "(min-width: 640px) and (max-height: 820px)" },
+        squat: { raw: "(max-width: 639px) and (max-height: 700px)" },
+      },
       colors: {
         // ── Core palette ─────────────────────────────────────────────
         ink: {

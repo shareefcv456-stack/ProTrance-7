@@ -71,6 +71,12 @@ const PHONE_QUERY = "(max-width: 767px), (pointer: coarse)";
     working. */
 const STAGE_AT = [0, 0.5, 0.7, 0.86];
 
+/** The story completes at this share of the pinned scroll; the rest is a
+    hold on the final frame. The story trails the scroll by design (see
+    lib/pace), so without a hold a quick fling released the pin while the
+    truck was still reversing and the ending played off-screen. */
+const STORY_END = 0.85;
+
 const chapters = [
   {
     label: "Warehouse",
@@ -227,9 +233,11 @@ const chips = [
 export function HomeHero() {
   const reduce = useReducedMotion();
   const scene = useRef<HTMLElement>(null);
-  // Desktop gets 260vh of runway so the four clips have room to breathe;
-  // below lg the section keeps its natural height and the sequence plays
-  // out over the hero's own scroll-out.
+  // Runway: 460svh on touch, where a swipe travels about a screen's worth
+  // so the runway should scale with the screen. On desktop a wheel notch is
+  // a fixed ~100px whatever the screen, so a short laptop needs a pixel floor
+  // or it gets half the notches per chapter a tall monitor does. Paired with
+  // the pace cap in lib/pace; the sticky panel pins for all of it.
   const progress = useRef(0);
   // Touch scrolling covers far less document per gesture than a wheel, so a
   // phone needs its own runway or the whole eight-beat story flies past in
@@ -361,13 +369,18 @@ export function HomeHero() {
       if (cancelled || !scene.current) return;
       const gsap = gsapMod.gsap ?? gsapMod.default;
       gsap.registerPlugin(stMod.ScrollTrigger);
+      // Mobile address bars resize the viewport as they show and hide; a
+      // refresh on each one re-measured the pin mid-gesture and jumped the
+      // story. The runway is in svh, which does not move with the bar.
+      stMod.ScrollTrigger.config({ ignoreMobileResize: true });
       trigger = stMod.ScrollTrigger.create({
         trigger: scene.current,
         start: "top top",
         end: "bottom bottom",
         onUpdate: (self) => {
-          progress.current = self.progress;
-          scroll.set(self.progress);
+          const p = Math.min(1, self.progress / STORY_END);
+          progress.current = p;
+          scroll.set(p);
         },
       });
     })();
@@ -432,8 +445,8 @@ export function HomeHero() {
   // 94% of an already-94% box and the poster photo showed through the
   // remainder — the sky band down the right edge at the yard stage.
   //
-  // The sticky pin already releases at exactly p = 1, because the panel is
-  // one viewport tall in a 260vh section. That hand-off never needed help.
+  // The sticky pin releases at the end of the section, after the story has
+  // finished and held (STORY_END). That hand-off never needed help.
 
   return (
     <section
@@ -442,7 +455,7 @@ export function HomeHero() {
       // to 0.94, and whatever sits behind it becomes a visible frame on all
       // four sides. Against #fffcfc that frame reads as a white gap tearing
       // open down the edges; against ink it reads as the panel insetting.
-      className="relative bg-ink h-[300vh] lg:h-[380vh]"
+      className="relative bg-ink h-[460svh] lg:h-[max(560vh,4800px)]"
     >
       {/* The pinned panel and the copy column both get their own compositor
           layer. Without it every scroll tick repaints a full-viewport stack
@@ -454,7 +467,10 @@ export function HomeHero() {
       <div className="transform-gpu will-change-transform sticky top-0">
         {/* Hero module — inset rounded image panel */}
         <div className="relative">
-          <div className="relative h-screen min-h-[650px] overflow-hidden bg-ink">
+          {/* h-svh, not h-screen with a min-height: a sticky panel taller than the
+              visible viewport has its bottom (the cards) cut off for the whole
+              pin. svh is the height with mobile browser chrome showing. */}
+          <div className="relative h-svh overflow-hidden bg-ink">
             {/* Scroll-driven WebGL scene. There is no poster photograph —
                 the hero is the 3D scene and nothing else.
 
@@ -562,7 +578,7 @@ export function HomeHero() {
             {/* z-20 is belt and braces — the column already paints over the
                 absolutely-positioned canvas by DOM order — but it states the
                 intent, and it keeps the CTAs above anything added later. */}
-            <div className="relative z-20 transform-gpu flex h-screen min-h-[650px] flex-col p-7 pb-8 pt-20 sm:p-12 sm:pb-10 sm:pt-32 lg:p-16 lg:pb-12 lg:pt-32">
+            <div className="relative z-20 transform-gpu flex h-svh flex-col p-7 pb-8 pt-20 sm:p-12 sm:pb-10 sm:pt-32 lg:p-16 lg:pb-12 lg:pt-32 squat:pb-5 squat:pt-[4.5rem] short:pb-6 short:pt-24">
               {/* Stage marker, headline and paragraph, all keyed to the same
                   stage so they change together.
 
@@ -572,7 +588,7 @@ export function HomeHero() {
                   the outgoing copy stays selectable and searchable while it
                   is invisible. AnimatePresence mode="wait" holds the incoming
                   until the outgoing has gone, so they never overlap. */}
-              <div className="min-h-[230px] sm:min-h-[290px] lg:min-h-[320px]">
+              <div className="min-h-[230px] sm:min-h-[290px] lg:min-h-[320px] squat:min-h-0 short:min-h-0">
                 <AnimatePresence mode="wait" initial={false}>
                   <m.div
                     key={stage}
@@ -590,7 +606,7 @@ export function HomeHero() {
                   >
                     {!reduce && (
                       <span
-                        className="mb-5 block font-mono text-[11px] uppercase tracking-[0.18em] text-accent"
+                        className="mb-5 squat:mb-3 short:mb-3 block font-mono text-[11px] uppercase tracking-[0.18em] text-accent"
                         aria-hidden="true"
                       >
                         {String(stage + 1).padStart(2, "0")} — {copy.label}
@@ -604,7 +620,7 @@ export function HomeHero() {
                         is 21 characters: at the old 4.3rem cap that measured
                         ~679px against a 640px column and broke to a third
                         line on three of the four headings. */}
-                    <h1 className="max-w-[720px] font-display text-[clamp(1.75rem,5.4vw,4rem)] font-600 leading-[1.04] tracking-tighter text-white">
+                    <h1 className="max-w-[720px] font-display text-[clamp(1.75rem,5.4vw,4rem)] squat:text-[1.6rem] short:text-[clamp(1.75rem,min(5.4vw,7.5vh),4rem)] font-600 leading-[1.04] tracking-tighter text-white">
                       {copy.title.map((line, i) => (
                         <span key={line} className="block">
                           {stage === 0 && !reduce ? (
@@ -617,7 +633,7 @@ export function HomeHero() {
                     </h1>
                     {/* text-pretty keeps the last line from breaking to a
                         single orphaned word. */}
-                    <p className="mt-5 max-w-[480px] text-pretty text-base leading-relaxed text-white/80 sm:text-lg">
+                    <p className="mt-5 max-w-[480px] text-pretty text-base leading-relaxed text-white/80 sm:text-lg squat:mt-3 squat:text-[15px] short:mt-3 short:text-base">
                       {copy.body}
                     </p>
                   </m.div>
@@ -647,7 +663,7 @@ export function HomeHero() {
                 initial={reduce ? undefined : { opacity: 0, y: 10 }}
                 animate={showUi ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
                 transition={uiTransition(showUi, 0, 0.6)}
-                className="mb-4 mt-auto inline-flex self-start items-center gap-2.5 rounded-full bg-paper/95 py-2.5 pl-3 pr-4 shadow-lg"
+                className="mb-4 squat:mb-2 short:mb-3 mt-auto inline-flex self-start items-center gap-2.5 rounded-full bg-paper/95 py-2.5 pl-3 pr-4 shadow-lg"
               >
                 <span className="flex h-6 w-6 items-center justify-center rounded-full bg-accent">
                   <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -738,16 +754,16 @@ export function HomeHero() {
               {/* pb-0 below sm and gap-1 rather than gap-1.5: the last 5px
                   of the budget, taken out of dead space instead of out of
                   the type. The column already carries pb-8 underneath. */}
-              <div className="flex flex-col gap-1 pt-1 pb-0 sm:ml-auto sm:grid sm:max-w-[620px] sm:grid-cols-3 sm:gap-4 sm:pb-1 sm:pt-10">
+              <div className="flex flex-col gap-1 pt-1 pb-0 sm:ml-auto sm:grid sm:max-w-[620px] sm:grid-cols-3 sm:gap-4 sm:pb-1 sm:pt-10 short:pt-4">
                 {chips.map((chip, i) => (
                   <m.div
                     key={chip.title}
                     initial={reduce ? undefined : { opacity: 0, y: 20 }}
                     animate={showUi ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
                     transition={uiTransition(showUi, 0.2 + i * 0.1, 0.65)}
-                    className="flex flex-row items-center gap-2.5 rounded-2xl border border-white/20 bg-ink/60 bg-[linear-gradient(160deg,rgba(255,255,255,0.14),rgba(255,255,255,0.04))] p-2 shadow-[0_8px_32px_-12px_rgba(0,0,0,0.6)] sm:flex-col sm:items-stretch sm:gap-0 sm:p-5"
+                    className="flex flex-row items-center gap-2.5 rounded-2xl border border-white/20 bg-ink/60 bg-[linear-gradient(160deg,rgba(255,255,255,0.14),rgba(255,255,255,0.04))] p-2 shadow-[0_8px_32px_-12px_rgba(0,0,0,0.6)] sm:flex-col sm:items-stretch sm:gap-0 sm:p-5 short:p-3.5"
                   >
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 text-accent sm:h-10 sm:w-10">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 text-accent sm:h-10 sm:w-10 short:h-8 short:w-8">
                       <svg
                         className="h-4 w-4 sm:h-5 sm:w-5"
                         viewBox="0 0 24 24"
@@ -766,10 +782,10 @@ export function HomeHero() {
                         block sitting beside the icon. min-w-0 lets it shrink
                         so long body copy wraps instead of widening the row. */}
                     <div className="min-w-0 sm:contents">
-                      <span className="block font-display text-[13px] font-600 leading-snug text-paper sm:mt-4 sm:text-sm">
+                      <span className="block font-display text-[13px] font-600 leading-snug text-paper sm:mt-4 sm:text-sm short:mt-2.5">
                         {chip.title}
                       </span>
-                      <span className="mt-0.5 block text-[11px] leading-tight text-grey-300 sm:mt-1 sm:text-xs sm:leading-relaxed">
+                      <span className="mt-0.5 block text-[11px] leading-tight text-grey-300 sm:mt-1 sm:text-xs sm:leading-relaxed short:leading-snug">
                         {chip.body}
                       </span>
                     </div>
