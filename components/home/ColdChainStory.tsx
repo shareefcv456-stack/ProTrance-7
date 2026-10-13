@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { m, useReducedMotion } from "framer-motion";
+import { m } from "framer-motion";
+import { useReducedMotion } from "@/components/motion/useReducedMotion";
 import type { ImageRef } from "@/lib/images";
 import { images } from "@/lib/images";
 import { Reveal } from "@/components/motion/Reveal";

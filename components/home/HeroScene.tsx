@@ -5,6 +5,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -92,14 +93,25 @@ const SHOTS: Array<{ pos: [number, number, number]; target: [number, number, num
   { pos: [-9.5, 5.4, 14], target: [0, 2.3, -2] }, // 0.357  close, loading
   { pos: [-18, 5.0, 16], target: [0, 2.5, -1] }, // 0.500  cargo secured
   { pos: [-24, 5.0, 7], target: [0, 2.4, 0] }, // 0.643  departure tracking
-  { pos: [-18, 6.4, 15], target: [0, 2.1, -1] }, // 0.786  highway side track
+  // z = 7, not 15. The truck waits at the terminal barrier from 0.82, with
+  // the gate's left post (road-local x -9.6) six units ahead of it; from
+  // z = 15 that post sat square on the sight line and filled a fifth of the
+  // frame with a dark slab for the whole hold. From 7 the line passes behind
+  // it, with room to spare for the phone rig, which stands 1.42x further off.
+  { pos: [-18, 6.4, 7], target: [0, 2.1, -1] }, // 0.786  highway side track
   // Aimed down the clear lane the truck reverses into. park() leaves it at
   // (20, 0, 8.4) facing -X, and the container field is stacked either side
   // of that lane at z = 3.55..6.05 and 10.75..13.25 — any approach across
   // the field looks straight through a stack of boxes, which is what made
-  // the destination reveal reveal an empty apron. Along the lane the sight
-  // line is clear all the way, and the gantry legs at x = 12 frame it.
-  { pos: [-6, 6.8, 6.0], target: [20, 2.6, 8.4] }, // 0.929  yard arrival + park
+  // the destination reveal reveal an empty apron.
+  //
+  // On the lane's axis and high. At z = 6 / y = 6.8 the lens sat inside the
+  // near row's band and a box cut off the lower half of the truck, and from
+  // that height the trailer hid its own open doors and the crane working
+  // them — the "backed onto the quay, doors open" beat was never in shot.
+  // From up here the sight line runs over the cab, down the roof, to the
+  // open doorway and the crates still aboard.
+  { pos: [2, 10, 8.2], target: [21, 2.4, 8.4] }, // 0.929  yard arrival + park
 ];
 
 /** How far left of the subject the camera aims, in world units at the
@@ -143,10 +155,15 @@ const MOODS: Array<{
   { fog: "#ccc3b2", key: "#ffeed1", keyI: 4.5, amb: 0.74, ambCol: "#c8bfab", rim: 1.3, fogN: 110, fogF: 450, sky: 1.06, sun: [-23, 32, 14] },
   { fog: "#d6c5a6", key: "#ffe9c4", keyI: 4.6, amb: 0.72, ambCol: "#cbbc9f", rim: 1.6, fogN: 100, fogF: 430, sky: 1.02, sun: [-25, 26, 10] },
   // Golden hour: the sun is nearly on the horizon and well round to the side.
-  { fog: "#dfb384", key: "#ffd097", keyI: 4.4, amb: 0.64, ambCol: "#c7a67d", rim: 2.3, fogN: 75, fogF: 360, sky: 0.94, sun: [-30, 12, 4] },
+  { fog: "#dfb384", key: "#ffd097", keyI: 4.6, amb: 0.74, ambCol: "#c7a67d", rim: 2.3, fogN: 75, fogF: 360, sky: 0.96, sun: [-30, 12, 4] },
   // Dusk yard. Not night-black: the key drops to a cold residual sky light
   // and the yard's own floodlights become the exposure.
-  { fog: "#454c60", key: "#9db1cd", keyI: 1.3, amb: 0.52, ambCol: "#69748c", rim: 1.5, fogN: 60, fogF: 320, sky: 0.4, sun: [-30, 10, -2] },
+  //
+  // Blue hour rather than nightfall. At key 1.3 / sky 0.4 the whole last
+  // fifth of the scroll — the gate hold, the manoeuvre and the payoff — sat
+  // a stop under every other beat, and the white body went mid-grey. The
+  // floodlights still carry the mood; this just keeps the truck readable.
+  { fog: "#5a647c", key: "#aabdd8", keyI: 2.8, amb: 0.82, ambCol: "#8490a9", rim: 1.7, fogN: 70, fogF: 340, sky: 0.68, sun: [-30, 10, -2] },
 ];
 
 /** Anisotropic filtering for every texture built below, set once instead of
@@ -282,10 +299,11 @@ function drift(p: number) {
     something for it to drive through. */
 const RAIL_END = 330;
 
-/** The warehouse's own gate onto the public road, in world z: right at the
+/** The warehouse's own gate onto the public road, in world z: at HWY_A, the
     edge of the apron, which is what a gate is. The truck reaches it around
-    p = 0.58 — the departure beat. */
-const EXIT_Z = 33;
+    p = 0.583 — the departure beat. At 33 its post and fence stood ten units
+    in front of the opening camera, cutting into the right of the first frame. */
+const EXIT_Z = HWY_A;
 
 const PARK_R = 8.4;
 const PARK_BACK = 28.4;
@@ -456,7 +474,9 @@ function Instanced({
 }) {
   const ref = useRef<THREE.InstancedMesh>(null);
 
-  useEffect(() => {
+  // Layout, not passive: a frame drawn between commit and a passive effect
+  // showed every rack, pallet and carton stacked at the origin.
+  useLayoutEffect(() => {
     const mesh = ref.current;
     if (!mesh) return;
     const o = new THREE.Object3D();
@@ -771,11 +791,15 @@ function useAsphalt(repeatY: number) {
     // as uniform card from any distance at all. Asphalt is chips of stone in
     // a dark binder, so draw the chips: a few thousand small ellipses over a
     // near-black base, at a size that survives the mip chain.
-    ctx.fillStyle = "#2b2b2e";
+    // Low-contrast chips. At grey 58-120 on a #2b2b2e binder every chip was
+    // a bright fleck, and through the normal map below a sparkle: the road
+    // read as loose gravel. Worn asphalt is chips polished nearly level
+    // with the binder, so the spread is a third of what it was.
+    ctx.fillStyle = "#58585a";
     ctx.fillRect(0, 0, SZ, SZ);
-    for (let i = 0; i < 5200; i++) {
-      const v = 58 + rand() * 62;
-      const r = 1.2 + rand() * 3.4;
+    for (let i = 0; i < 7000; i++) {
+      const v = 74 + rand() * 30;
+      const r = 0.9 + rand() * 2.2;
       ctx.fillStyle = `rgb(${v},${v},${v + 4})`;
       ctx.beginPath();
       ctx.ellipse(rand() * SZ, rand() * SZ, r, r * (0.6 + rand() * 0.6), rand() * 3.14, 0, 6.29);
@@ -798,8 +822,8 @@ function useAsphalt(repeatY: number) {
           const dx = at(x + 1, y) - at(x - 1, y);
           const dy = at(x, y + 1) - at(x, y - 1);
           const i = (y * SZ + x) * 4;
-          out.data[i] = 128 - dx * 165;
-          out.data[i + 1] = 128 - dy * 165;
+          out.data[i] = 128 - dx * 70;
+          out.data[i + 1] = 128 - dy * 70;
           out.data[i + 2] = 255;
           out.data[i + 3] = 255;
         }
@@ -816,15 +840,25 @@ function useAsphalt(repeatY: number) {
     w.height = SZ;
     const wctx = w.getContext("2d");
     if (wctx) {
+      // three multiplies this into material roughness. Drawing the albedo
+      // straight in (grey ~0.23) cut every surface using it to a quarter of
+      // its authored roughness: a 0.62 road rendered at ~0.14, a mirror for
+      // the blue sky. A light base keeps the chip variation as variation.
+      wctx.fillStyle = "#ffffff";
+      wctx.fillRect(0, 0, SZ, SZ);
+      wctx.globalAlpha = 0.22;
       wctx.drawImage(c, 0, 0);
+      wctx.globalAlpha = 1;
       const puddle = prng(4471);
       for (let i = 0; i < 16; i++) {
         const px = puddle() * SZ;
         const py = puddle() * SZ;
         const pr = 32 + puddle() * 88;
         const g2 = wctx.createRadialGradient(px, py, 1, px, py, pr);
-        g2.addColorStop(0, "rgba(0,0,0,0.95)");
-        g2.addColorStop(0.7, "rgba(0,0,0,0.45)");
+        // Damp patches, not standing water: near-zero roughness here
+        // mirrored the env-map sun as a hot speck in every shot.
+        g2.addColorStop(0, "rgba(0,0,0,0.3)");
+        g2.addColorStop(0.7, "rgba(0,0,0,0.12)");
         g2.addColorStop(1, "rgba(0,0,0,0)");
         wctx.fillStyle = g2;
         wctx.fillRect(px - pr, py - pr, pr * 2, pr * 2);
@@ -1650,6 +1684,10 @@ function probeDevice(): DeviceProfile {
       // Hand the context back rather than waiting for the GC to do it: there
       // are only so many per page, and the real one still has to be created.
       gl.getExtension("WEBGL_lose_context")?.loseContext();
+    } else {
+      // No WebGL at all. Same answer as a software rasteriser: the poster,
+      // rather than a Canvas that throws on construction.
+      software = true;
     }
   } catch {
     // A blocked or unavailable context tells us nothing. Assume capable and
@@ -2098,20 +2136,30 @@ function AdaptiveResolution({
     bloom thresholds against real HDR values and OutputPass tone maps exactly
     once at the end. */
 /** Soft contact shadow so the truck sits on the road rather than hovering. */
-function ContactShadow() {
-  const tex = useDisposable(useMemo(
-    () =>
-      radialTexture([
-        [0, "rgba(0,0,0,0.68)"],
-        [0.55, "rgba(0,0,0,0.3)"],
-        [1, "rgba(0,0,0,0)"],
-      ]),
-    [],
-  ));
+function ContactShadow({
+  w = 4.4,
+  d = 11.2,
+  z = -0.6,
+}: {
+  w?: number;
+  d?: number;
+  z?: number;
+}) {
+  // One texture for the hero and every car in the traffic stream.
+  const tex = useShared("contact-shadow", () =>
+    radialTexture([
+      [0, "rgba(0,0,0,0.5)"],
+      [0.55, "rgba(0,0,0,0.22)"],
+      [1, "rgba(0,0,0,0)"],
+    ]),
+  );
   if (!tex) return null;
+  // Hugging the 2.6-wide body. At 7.5 wide and 68% it spread a black pool
+  // two metres past each flank and, stacked on the real shadow map, sank the
+  // tyres and skirts into it — the occlusion is meant to be under the truck.
   return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, -0.6]}>
-      <planeGeometry args={[7.5, 12]} />
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, z]}>
+      <planeGeometry args={[w, d]} />
       <meshBasicMaterial map={tex} transparent depthWrite={false} />
     </mesh>
   );
@@ -2245,21 +2293,22 @@ function BuiltTruck({
           highlight that plain roughness cannot produce. */}
       <mesh position={[0, 2.5, -1.35]} castShadow={cast} receiveShadow={cast}>
         <Rounded w={2.6} h={2.85} d={7.3} r={0.09} />
+        {/* Satin GRP panel, not lacquer. With a 0.7 clearcoat at 1.25 env
+            the box was as glossy as the cab, read as plastic, and bloomed
+            under the yard floods. Now the red cab is the one glossy part. */}
         <meshPhysicalMaterial
           color={WHITE}
-          roughness={0.34}
-          metalness={0.08}
-          clearcoat={0.7}
-          // Was rougher than the base coat underneath it, which is backwards:
-          // a lacquer is the smoothest layer on the vehicle. At 0.28 the
-          // horizon band in the environment smeared into a grey wash and the
-          // flank read as primer.
-          clearcoatRoughness={0.14}
-          envMapIntensity={1.25}
+          roughness={0.46}
+          metalness={0.04}
+          clearcoat={0.25}
+          clearcoatRoughness={0.3}
+          envMapIntensity={0.85}
         />
       </mesh>
       {/* Body ribs + skirt */}
-      {[-3.4, -1.8, -0.2, 1.4].map((z) => (
+      {/* End posts only. The two middle ribs ran through the livery panel
+          and cut the wordmark into strips — the "stretched logo". */}
+      {[-3.4, 1.4].map((z) => (
         <mesh key={z} position={[0, 2.5, z]}>
           <boxGeometry args={[2.66, 2.7, 0.07]} />
           <meshStandardMaterial color="#e4e1dd" roughness={0.6} metalness={0.1} />
@@ -2411,10 +2460,10 @@ function BuiltTruck({
         <cylinderGeometry args={[0.3, 0.3, 1.2, 16]} />
         <meshStandardMaterial color="#b6bcc4" roughness={0.12} metalness={1} envMapIntensity={2.2} />
       </mesh>
-      {/* Mudflaps */}
-      {[-1.24, 1.24].map((x) => (
-        <mesh key={x} position={[x, 0.42, -3.75]}>
-          <boxGeometry args={[0.8, 0.72, 0.05]} />
+      {/* Mudflaps, hung behind the last axle rather than through its tyres. */}
+      {[-1.02, 1.02].map((x) => (
+        <mesh key={x} position={[x, 0.45, -4.25]}>
+          <boxGeometry args={[0.72, 0.66, 0.05]} />
           <meshStandardMaterial color="#141416" roughness={0.95} />
         </mesh>
       ))}
@@ -2447,6 +2496,42 @@ function BuiltTruck({
           <meshStandardMaterial color="#17181b" roughness={0.85} />
         </mesh>
       ))}
+      {/* Door panels: shut lines, handle and grab rail, and the two-rung
+          entry step below. A cab with no door reads as a moulded block. */}
+      {[-1, 1].map((side) => (
+        <group key={`door${side}`} position={[side * 1.257, 0, 0]}>
+          {[2.28, 4.02].map((z) => (
+            <mesh key={z} position={[0, 2.0, z]}>
+              <boxGeometry args={[0.02, 1.86, 0.025]} />
+              <meshStandardMaterial color="#3d0a10" roughness={0.8} />
+            </mesh>
+          ))}
+          <mesh position={[0, 1.1, 3.15]}>
+            <boxGeometry args={[0.02, 0.025, 1.74]} />
+            <meshStandardMaterial color="#3d0a10" roughness={0.8} />
+          </mesh>
+          <mesh position={[side * 0.02, 2.0, 2.5]}>
+            <boxGeometry args={[0.04, 0.05, 0.26]} />
+            <meshStandardMaterial color="#c9ced6" roughness={0.2} metalness={1} />
+          </mesh>
+          <mesh position={[side * 0.03, 1.75, 2.36]}>
+            <boxGeometry args={[0.04, 0.9, 0.04]} />
+            <meshStandardMaterial color="#c9ced6" roughness={0.2} metalness={1} />
+          </mesh>
+          {[0.5, 0.85].map((y) => (
+            <mesh key={y} position={[side * -0.08, y, 3.15]} castShadow={cast}>
+              <boxGeometry args={[0.32, 0.05, 0.8]} />
+              <meshStandardMaterial color="#5c6068" roughness={0.45} metalness={0.85} />
+            </mesh>
+          ))}
+        </group>
+      ))}
+      {/* Sun visor over the screen. */}
+      <mesh position={[0, 3.02, 4.26]} rotation={[0.25, 0, 0]} castShadow={cast}>
+        <boxGeometry args={[2.3, 0.06, 0.34]} />
+        <meshStandardMaterial color="#1c1d21" roughness={0.6} metalness={0.3} />
+      </mesh>
+
       {/* Chrome bumper and grille */}
       <mesh position={[0, 1.35, 4.2]}>
         <boxGeometry args={[2.4, 0.5, 0.24]} />
@@ -2495,6 +2580,18 @@ function BuiltTruck({
           </mesh>
         </group>
       ))}
+      {/* Amber indicators wrapping the front corners. */}
+      {[-1.18, 1.18].map((x) => (
+        <mesh key={`ind${x}`} position={[x, 1.6, 4.3]} userData={{ lit: 1.6 }}>
+          <boxGeometry args={[0.13, 0.2, 0.1]} />
+          <meshStandardMaterial
+            color="#ffb057"
+            emissive="#ff9d3c"
+            emissiveIntensity={0.3}
+            toneMapped={false}
+          />
+        </mesh>
+      ))}
       {[-1.0, 1.0].map((x) => (
         <group key={`t${x}`}>
           <mesh position={[x, 1.5, -5.06]} userData={{ lit: 3.4 }}>
@@ -2524,16 +2621,16 @@ function BuiltTruck({
       </group>
 
       <mesh position={[0, 1.02, 0.4]}>
-        <boxGeometry args={[2.1, 0.42, 8.6]} />
+        <boxGeometry args={[1.26, 0.42, 8.6]} />
         <meshStandardMaterial color={DARK} roughness={0.85} />
       </mesh>
 
-      <group ref={wheels}>
+      <group ref={wheels} name="hero-wheels">
         {axles.flatMap(({ z, dual }) =>
           [-1, 1].flatMap((side) =>
             // A dual axle is the same tyre twice, shoulder to shoulder.
-            (dual ? [0.86, 1.26] : [1.24]).map((off) => (
-              <group key={`${z}-${side}-${off}`} position={[side * off, 0.72, z]}>
+            (dual ? [0.83, 1.21] : [1.21]).map((off) => (
+              <group key={`${z}-${side}-${off}`} position={[side * off, WHEEL_R, z]}>
                 {/* Tread on the running surface, sidewall on the flanks.
                     The material array maps to a cylinder's three groups —
                     lateral, top cap, bottom cap — so the tread normal map
@@ -2549,14 +2646,14 @@ function BuiltTruck({
                   castShadow={cast}
                   material={[tread, sidewall, sidewall]}
                 >
-                  <cylinderGeometry args={[0.72, 0.72, 0.4, quality === "high" ? 32 : 10]} />
+                  <cylinderGeometry args={[WHEEL_R, WHEEL_R, 0.34, quality === "high" ? 32 : 10]} />
                 </mesh>
                 {/* Only the outer tyre of a pair shows a rim. */}
                 {(!dual || off > 1.2) && (
-                  <group position={[side * 0.21, 0, 0]} rotation={[0, 0, Math.PI / 2]}>
+                  <group position={[side * 0.18, 0, 0]} rotation={[0, 0, Math.PI / 2]}>
                     {/* Barrel plain, face carrying the spokes and bolts. */}
                     <mesh material={[rimEdge, rimDisc, rimDisc]}>
-                      <cylinderGeometry args={[0.42, 0.42, 0.04, quality === "high" ? 28 : 8]} />
+                      <cylinderGeometry args={[0.33, 0.33, 0.04, quality === "high" ? 28 : 8]} />
                     </mesh>
                   </group>
                 )}
@@ -2568,6 +2665,11 @@ function BuiltTruck({
     </group>
   );
 }
+
+/** Hero tyre radius, in the same metres as the 2.6-wide body: a 295/80R22.5
+    is about 1.05 across. It was 0.72 (a 1.44 m tyre), which is the single
+    biggest reason the truck read as a toy. Wheel spin divides by this. */
+const WHEEL_R = 0.53;
 
 const HIVIS = "#f2b21a";
 
@@ -2605,6 +2707,10 @@ function glass(_quality: Quality, tint: string, opacity: number) {
     why the flanks showed a white line boxing the mark in. This is the
     matte-extracted version; regenerate it if the brand asset changes. */
 const LOGO = "/logo-cutout.png";
+// Requested as soon as this chunk evaluates, not when the truck first renders:
+// the truck and the whole world suspend on it, and fetching it only then put a
+// full round trip between the canvas booting and anything being in it.
+if (typeof window !== "undefined") useLoader.preload(THREE.TextureLoader, LOGO);
 
 /** Decal material settings, shared by every surface carrying the livery.
     alphaTest rather than plain blending: a matte cut-out has no soft edge
@@ -3332,8 +3438,11 @@ function Warehouse({
           three walls were a black void behind the bays, which is the "flat
           black building" failure exactly: a shed reads as a shed because the
           ribs catch the key light down one flank. */}
+      {/* 39 wide: it ran 46, three and a half units past each side wall,
+          so the back of the shed stuck out beyond the building at both
+          corners under a 40-wide roof. */}
       <mesh position={[0, 7, -16]} receiveShadow>
-        <boxGeometry args={[46, 15, 1]} />
+        <boxGeometry args={[39, 15, 1]} />
         <meshStandardMaterial
           color="#4a505c"
           roughness={0.72}
@@ -3354,9 +3463,9 @@ function Warehouse({
           />
         </mesh>
       ))}
-      <mesh position={[0, 14.2, 0]}>
+      <mesh position={[0, 14.2, 0]} receiveShadow>
         <boxGeometry args={[40, 1, 34]} />
-        <meshStandardMaterial color="#2f343d" roughness={0.9} metalness={0.3} />
+        <meshStandardMaterial color="#5f656e" roughness={0.6} metalness={0.5} normalMap={ribs} />
       </mesh>
 
       {/* Concrete bay floor — poured slab with expansion joints, so the dock
@@ -3368,18 +3477,18 @@ function Warehouse({
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.015, 7]} receiveShadow>
         <planeGeometry args={[46, 66]} />
         <meshStandardMaterial
-          color="#6b6862"
-          roughness={0.78}
-          metalness={0.12}
-          envMapIntensity={0.9}
+          color="#6e6b65"
+          roughness={0.82}
+          metalness={0}
+          envMapIntensity={0.85}
           normalScale={new THREE.Vector2(0.5, 0.5)}
           {...(concrete ?? {})}
         />
       </mesh>
       {[-16, -8, 0, 8, 16].map((x) => (
         <mesh key={x} rotation={[-Math.PI / 2, 0, 0]} position={[x, 0.02, 7]}>
-          <planeGeometry args={[0.12, 66]} />
-          <meshStandardMaterial color="#4c4a45" roughness={1} />
+          <planeGeometry args={[0.05, 66]} />
+          <meshStandardMaterial color="#5a5751" roughness={1} />
         </mesh>
       ))}
 
@@ -3395,13 +3504,13 @@ function Warehouse({
         <group key={bay} position={[bay, 0, 15]}>
           {[-4.6, 4.6].map((x) => (
             <mesh key={x} position={[x, 4.5, 0]} castShadow>
-              <boxGeometry args={[0.55, 9, 0.55]} />
-              <meshStandardMaterial color="#2c2e36" roughness={0.8} />
+              <boxGeometry args={[0.38, 9, 0.38]} />
+              <meshStandardMaterial color="#6f747c" roughness={0.5} metalness={0.6} />
             </mesh>
           ))}
           <mesh position={[0, 9.1, 0]}>
-            <boxGeometry args={[9.8, 0.55, 0.55]} />
-            <meshStandardMaterial color="#2c2e36" roughness={0.8} />
+            <boxGeometry args={[9.6, 0.42, 0.42]} />
+            <meshStandardMaterial color="#6f747c" roughness={0.5} metalness={0.6} />
           </mesh>
           {/* Shutter head box — the drum the curtain winds onto. */}
           <mesh position={[0, 9.05, -0.3]} castShadow>
@@ -3536,7 +3645,7 @@ function Warehouse({
         <StockField quality={quality} flute={flute} />
 
         <Forklift body={lift} carriage={forks} />
-        <group ref={crates}>
+        <group ref={crates} name="hero-cargo">
           {[0, 1, 2, 3].map((i) => (
             <group key={i} position={[-7, 0.8, -13]}>
               <mesh castShadow receiveShadow>
@@ -3674,15 +3783,19 @@ function Road({ quality }: { quality: Quality }) {
         receiveShadow={quality === "high"}
       >
         <planeGeometry args={[ROAD_W, 460]} />
-        {/* Damp asphalt: low-ish roughness plus a little metalness gives the
-            surface a specular sheen that reads as wet, without the cost of a
-            real reflection pass. */}
+        {/* Dry asphalt: a dielectric. At metalness 0.42 and env 2.1 the road
+            tinted itself with the reflected sky — the navy carriageway — and
+            glinted where the roughness map dipped. */}
         <meshStandardMaterial
-          color="#3e3f47"
-          roughness={0.62}
-          metalness={0.42}
-          envMapIntensity={2.1}
-          normalScale={new THREE.Vector2(0.55, 0.55)}
+          // The map carries the albedo; this only trims it. Multiplying a
+          // dark map by a dark tint left ~1% reflectance, so the sky's
+          // fresnel reflection was all the road showed: navy, with the sun
+          // as a hot spot in it. Asphalt sits around 7%.
+          color="#c4c4c6"
+          roughness={0.9}
+          metalness={0}
+          envMapIntensity={0.7}
+          normalScale={new THREE.Vector2(0.45, 0.45)}
           {...(asphalt ?? {})}
         />
       </mesh>
@@ -4117,6 +4230,10 @@ function Vehicle({ kind, color, quality }: { kind: Kind; color: string; quality:
 
   return (
     <group>
+      {/* Ground occlusion. Without it a car on a sunlit road reads as
+          hovering, shadow map or not — the map is too coarse at this range
+          to darken the strip under the sills. */}
+      <ContactShadow w={s.w + 0.9} d={s.l + 1.2} z={0} />
       {/* Lower body. */}
       <mesh position={[0, s.r + s.h / 2, 0]} castShadow={cast}>
         <Rounded w={s.w} h={s.h} d={s.l} r={0.16} />
@@ -4277,7 +4394,12 @@ function Traffic({
       const rel =
         wrap(c.offset + (c.dir * c.rate - 1) * run, TRAFFIC_SPAN) -
         TRAFFIC_SPAN * (1 - TRAFFIC_LEAD);
-      v.position.set(c.lane, 0, run + rel);
+      const z = run + rel;
+      // Per vehicle, not per stream: the window runs ~100 units behind the
+      // truck, so at the dock beat cars were being placed on the apron and
+      // inside the shed, and at the yard beat among the containers.
+      v.visible = z > HWY_A + 6 && z < HWY_B - 6;
+      v.position.set(c.lane, 0, z);
       v.rotation.y = c.dir > 0 ? 0 : Math.PI;
 
       const wheels = (v.userData.w ??= v.getObjectByName("w")) as THREE.Object3D | null;
@@ -4660,11 +4782,6 @@ function Port({
   const hazard = useHazard();
   const link = useChainLink();
   const boom = useRef<THREE.Group>(null);
-  const trolley = useRef<THREE.Group>(null);
-  const ropes = useRef<THREE.Group>(null);
-  const loadX = useRef(-16);
-  const spreader = useRef<THREE.Group>(null);
-  const box = useRef<THREE.Group>(null);
   const gang = useRef<THREE.Group>(null);
   const masts = useRef<THREE.Group>(null);
   /** Emissive materials and point lights per mast, resolved once.
@@ -4687,10 +4804,8 @@ function Port({
     Array<{ mats: THREE.MeshStandardMaterial[]; lights: THREE.PointLight[] }> | null
   >(null);
 
-  // Unloading, once the truck has stopped. One move: the spreader comes
-  // down beside the trailer, latches, lifts clear, and the trolley runs it
-  // out over the stacks on the quay side.
-  useFrame(({ clock }, delta) => {
+  // Yard floodlights, the terminal barrier and the waiting crew.
+  useFrame(({ clock }) => {
     // Yard lighting comes up progressively rather than as one switch: each
     // mast strikes a beat after the one before it, the way a real yard's
     // photocells trip as the light falls. Staggering it is the difference
@@ -4724,59 +4839,6 @@ function Port({
       }
     }
 
-    // Starts once the reverse has finished and the doors are open.
-    const u = clamp01((progress.current - (BACK_B + 0.01)) / 0.045);
-    const down = smooth(clamp01(u / 0.3));
-    const rise = smooth(clamp01((u - 0.36) / 0.24));
-    const across = smooth(clamp01((u - 0.62) / 0.38));
-
-    // Crane-local: the group sits at x = 21. The truck parks at x = 20
-    // heading -X, so its rear doorway lands at world x = 25 — crane-local
-    // +6 — and the drop is out at +15, over the far container column.
-    const tx = 6 + across * 9;
-    // Down to the trailer bed (box at 2.6), up clear, then down to the
-    // apron (box at 1.3).
-    const hookY = 21.5 - 16.9 * (down - rise) - across * 18.2;
-
-    if (trolley.current) trolley.current.position.x = tx;
-
-    // Pendulum lag. A suspended load cannot change speed with the trolley —
-    // it trails, then overshoots and settles. This is the whole of the
-    // "tension" read, and it is one damped follow.
-    loadX.current += (tx - loadX.current) * Math.min(1, delta * 1.6);
-    const sway = loadX.current - tx;
-
-    if (spreader.current) {
-      spreader.current.position.x = sway;
-      spreader.current.position.y = hookY - 21.5;
-    }
-    if (ropes.current) {
-      // Four falls, and each one has to actually span sheave to spreader —
-      // a fixed-length rope is the thing that gives a crane away. The drop
-      // is vertical and the sway is in X only, so the whole reeving shares
-      // one length and one tilt.
-      const len = Math.max(0.3, 21.5 - hookY);
-      const hyp = Math.hypot(len, sway);
-      const tilt = Math.atan2(sway, len);
-      for (const r of ropes.current.children) {
-        r.scale.y = hyp;
-        r.rotation.z = tilt;
-        r.position.y = -len / 2;
-        r.position.x = (r.userData.x as number) + sway / 2;
-      }
-    }
-    if (box.current) {
-      const held = smooth(clamp01((u - 0.3) / 0.12));
-      // Starts on the trailer bed at the doorway and is drawn straight out
-      // along the crane's axis — never sideways through the container walls.
-      // Once aboard it hangs off the spreader, sway included, so the load and
-      // the ropes cannot disagree about where it is.
-      box.current.position.x = THREE.MathUtils.lerp(6, tx + sway, held);
-      // 2.0 below the beam: half the container plus the twistlock drop, so
-      // it hangs off the spreader instead of floating under it.
-      box.current.position.y = THREE.MathUtils.lerp(2.6, hookY - 2.0, held);
-    }
-
     // About Z, not X. The arm lies along X, so rotating it about X spun it
     // around its own length and left it lying flat across the lane — which
     // is the whole of the reported bug. Z is the axis that swings +X into
@@ -4807,7 +4869,10 @@ function Port({
 
   const stacks = useMemo(() => {
     const rand = prng(20260831);
-    const palette = ["#b8532f", "#2f6fb8", "#c9922f", "#3f8a52", "#8a3f6d"];
+    // Shipping-line liveries as they look after a few years at sea: muted
+    // and slightly chalky. The old set was five saturated primaries (one a
+    // magenta no carrier uses), which is what made the field read as toys.
+    const palette = ["#9a4a32", "#3d5f82", "#b5843a", "#4c6b52", "#7f8489", "#c9c4b8"];
     const out: Array<{
       x: number;
       y: number;
@@ -4839,7 +4904,7 @@ function Port({
     return out;
   }, [cols, rows]);
 
-  /* The container field, as three draw calls.
+  /* The container field, as two draw calls.
 
      It was about two hundred and twenty. Each box was its own mesh with its
      own material (they differ in colour and in roughness), every top box
@@ -4848,8 +4913,9 @@ function Port({
      all of it is on screen at once.
 
      Nothing about the picture changes: the colours and the per-box weathering
-     ride instanced attributes (see varied()), and the castings and the decals
-     are the same geometry at the same places. */
+     ride instanced attributes (see varied()), and the castings are the same
+     geometry at the same places. The per-box branding planes are gone: the
+     company mark on every third box of a public terminal is not a thing. */
   const boxGeo = useOwned(useMemo(() => new THREE.BoxGeometry(6.1, 2.6, 2.5), []));
   const boxMat = useOwned(
     useMemo(
@@ -4859,8 +4925,8 @@ function Port({
             color: "#ffffff",
             roughness: 1,
             roughnessMap: weather,
-            metalness: 0.45,
-            envMapIntensity: 1.2,
+            metalness: 0.3,
+            envMapIntensity: 0.9,
             normalMap: ribs,
             normalScale: new THREE.Vector2(1.1, 1.1),
           }),
@@ -4875,26 +4941,12 @@ function Port({
       [],
     ),
   );
-  const decalGeo = useOwned(useMemo(() => new THREE.PlaneGeometry(3.4, 1.25), []));
-  const decalMat = useOwned(
-    useMemo(
-      () =>
-        new THREE.MeshStandardMaterial({
-          map: logo,
-          roughness: 0.6,
-          metalness: 0.3,
-          ...DECAL,
-        }),
-      [logo],
-    ),
-  );
 
   const field = useMemo(() => {
     const boxes: Pose[] = [];
     const tint: string[] = [];
     const rough: number[] = [];
     const castings: Pose[] = [];
-    const decals: Pose[] = [];
     stacks.forEach((c, i) => {
       boxes.push([c.x, c.y, c.z, 0, 0, 0, 1, 1, 1]);
       tint.push(c.color);
@@ -4904,9 +4956,8 @@ function Port({
           castings.push([c.x + cx, c.y + 1.32, c.z + cz, 0, 0, 0, 1, 1, 1]);
         }
       }
-      if (i % 3 === 0) decals.push([c.x, c.y + 0.1, c.z - 1.27, 0, Math.PI, 0, 1, 1, 1]);
     });
-    return { boxes, tint, rough, castings, decals };
+    return { boxes, tint, rough, castings };
   }, [stacks, quality]);
 
   const cranes = quality === "high" ? [-30, 34] : [34];
@@ -4916,10 +4967,10 @@ function Port({
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[12, 0.02, -10]} receiveShadow>
         <planeGeometry args={[80, 130]} />
         <meshStandardMaterial
-          color="#52525a"
-          roughness={0.55}
-          metalness={0.18}
-          envMapIntensity={1.1}
+          color="#c8c8cb"
+          roughness={0.85}
+          metalness={0}
+          envMapIntensity={0.8}
           normalScale={new THREE.Vector2(0.6, 0.6)}
           {...(apron ?? {})}
         />
@@ -5141,7 +5192,13 @@ function Port({
           <meshStandardMaterial color="#f28c28" roughness={0.5} metalness={0.3} />
         </mesh>
 
-        <group ref={trolley} position={[6, 21.5, 0]}>
+        {/* Parked mid-portal with the spreader up. It used to "unload" a
+            20 ft ISO box out of the back of a reefer van — a container that
+            could never fit in one, hanging 1.3 m off the ground behind the
+            parked trailer and a metre into its body for the whole yard beat.
+            The truck's real cargo is the four crates loaded at the dock, and
+            they stay aboard; the crew at the doors does the unloading. */}
+        <group position={[-2, 21.5, 0]}>
           <mesh castShadow>
             <boxGeometry args={[6.4, 1.2, 2.6]} />
             <meshStandardMaterial color="#f28c28" roughness={0.55} metalness={0.35} />
@@ -5163,15 +5220,13 @@ function Port({
               Thicker too: at 0.045 over an eighteen-unit drop the cables
               were about a pixel wide from the yard shot, which is to say
               invisible. */}
-          <group ref={ropes}>
-            {CORNER.map(([x, z]) => (
-              <mesh key={`r${x}-${z}`} position={[x, -9, z]} userData={{ x }}>
-                <cylinderGeometry args={[0.075, 0.075, 1, 6]} />
-                <meshStandardMaterial color="#1c1e22" roughness={0.45} metalness={0.85} />
-              </mesh>
-            ))}
-          </group>
-          <group ref={spreader} position={[0, -18, 0]}>
+          {CORNER.map(([x, z]) => (
+            <mesh key={`r${x}-${z}`} position={[x, -2.49, z]}>
+              <cylinderGeometry args={[0.075, 0.075, 3.73, 6]} />
+              <meshStandardMaterial color="#1c1e22" roughness={0.45} metalness={0.85} />
+            </mesh>
+          ))}
+          <group position={[0, -4.6, 0]}>
             <mesh castShadow>
               <boxGeometry args={[6.3, 0.5, 2.6]} />
               <meshStandardMaterial color="#d8d4cc" roughness={0.4} metalness={0.7} />
@@ -5183,30 +5238,6 @@ function Port({
               </mesh>
             ))}
           </group>
-        </group>
-        <group ref={box} position={[6, 2.6, 0]}>
-          {/* Corner castings — what the twistlocks land in. */}
-          {CORNER.map(([x, z]) => (
-              <mesh key={`cc${x}-${z}`} position={[x, 1.32, z]}>
-                <boxGeometry args={[0.4, 0.22, 0.3]} />
-                <meshStandardMaterial color="#3b3f45" roughness={0.5} metalness={0.8} />
-              </mesh>
-          ))}
-          <mesh castShadow receiveShadow>
-            <boxGeometry args={[6.1, 2.6, 2.5]} />
-            <meshStandardMaterial
-              color="#b8532f"
-              roughness={0.55}
-              metalness={0.45}
-              envMapIntensity={1.2}
-              normalMap={ribs}
-              normalScale={new THREE.Vector2(1.1, 1.1)}
-            />
-          </mesh>
-          <mesh position={[0, 0.1, -1.27]} rotation={[0, Math.PI, 0]}>
-            <planeGeometry args={[3.4, 1.25]} />
-            <meshStandardMaterial map={logo} roughness={0.6} metalness={0.3} {...DECAL} />
-          </mesh>
         </group>
       </group>
 
@@ -5220,9 +5251,6 @@ function Port({
         receive
       />
       <Instanced geometry={castGeo} material={castMat} poses={field.castings} cast />
-      {/* Branding on the flank of every third box — enough to read as a
-          liveried yard, not so much that it tiles. */}
-      <Instanced geometry={decalGeo} material={decalMat} poses={field.decals} />
 
       <group ref={gang}>
         <group>
@@ -5358,6 +5386,11 @@ function Rig({
   const rim = useRef<THREE.DirectionalLight>(null);
   const hemi = useRef<THREE.HemisphereLight>(null);
   const cabin = useRef<THREE.PointLight>(null);
+  const fill = useRef<THREE.DirectionalLight>(null);
+  // Aim point for the fill, parented to the truck so the light's direction
+  // turns with the yard manoeuvre. A directional light's default target is
+  // the world origin, which the truck leaves.
+  const fillTarget = useMemo(() => new THREE.Object3D(), []);
   const spill = useRef<THREE.Mesh>(null);
   const beams = useRef<THREE.Mesh>(null);
   // Resolved once and cached as a flat list. This used to be a traverse() of
@@ -5456,6 +5489,8 @@ function Rig({
     pace(paced.current, clamp01(progress.current), delta);
     eased.current = paced.current.value;
     const p = eased.current;
+    // Read by scripts/hero-regression.mjs to know which beat a frame is on.
+    scene.userData.progress = p;
     const { i, t } = segment(p, SHOTS.length);
     const now = clock.elapsedTime;
     const z = travelled(p);
@@ -5547,7 +5582,7 @@ function Rig({
       // manoeuvre, and goes negative while the truck reverses, so the wheels
       // back up with it.
       const rolled = z + pk.rolled;
-      const spin = (rolled - lastRolled.current) / 0.72;
+      const spin = (rolled - lastRolled.current) / WHEEL_R;
       for (const w of wheels.current.children) w.rotation.x += spin;
       lastRolled.current = rolled;
     }
@@ -5632,7 +5667,9 @@ function Rig({
     // stops a night scene reading as night — the practicals cannot compete
     // with an ambient that never switched off.
     if (hemi.current) {
-      hemi.current.intensity = 0.2 + 0.65 * clamp01(1 - smooth(clamp01((p - 0.82) / 0.12)));
+      // Floor 0.42, not 0.2: at 0.2 the shadow sides went to black under the
+      // dusk key and the truck read as a silhouette against the yard.
+      hemi.current.intensity = 0.42 + 0.43 * clamp01(1 - smooth(clamp01((p - 0.82) / 0.12)));
     }
 
     // Lights on. One ramp through the golden hour, driving the truck's own
@@ -5661,35 +5698,48 @@ function Rig({
       const m = beams.current.material as THREE.MeshBasicMaterial;
       m.opacity = dusk * 0.4;
     }
+    // Truck fill comes up with the same dusk ramp, so the hero vehicle keeps
+    // its value as the sun goes rather than sinking into the yard.
+    if (fill.current) fill.current.intensity = 0.55 + dusk * 1.6;
 
     // First real frame. onCreated fires before anything is drawn, so gating
     // the crossfade on it can uncover an empty canvas over the poster on a
     // slow GPU — this fires once the scene has actually been posed.
     //
-    // It now also waits for every material to be compiled (see precompile),
-    // and for the suspended truck and world groups to exist so their
-    // materials are in the graph being compiled. The poster covers the wait;
-    // if the groups never mount, the reveal goes ahead after 3s regardless.
+    // It also waits for every material to be compiled (see precompile), and
+    // never goes ahead without the truck and world groups. Both suspend on
+    // the logo texture, and the old blind escape (2.5s from the canvas's
+    // first frame, mounted or not) is what put an empty sky with no
+    // warehouse, racks or truck on screen whenever that fetch was slow. The
+    // poster and the loading indicator cover the wait instead.
     if (!painted.current) {
-      if (firstFrameAt.current < 0) firstFrameAt.current = now;
       const mounted = truck.current !== null && world.current !== null;
-      if (!compiling.current && (mounted || now - firstFrameAt.current > 3)) {
+      if (mounted && firstFrameAt.current < 0) firstFrameAt.current = now;
+      if (!compiling.current && mounted) {
         compiling.current = true;
         void precompile(gl, scene, camera, quality).then(() => {
           compiled.current = true;
         });
       }
-      // The escape covers a driver that never resolves compileAsync and a
-      // calibration still stepping down — a soft first frame beats a poster
-      // that never lifts. 2.5s rather than 4: on a healthy device the search
-      // is done in a third of a second and this never fires, so the only
-      // machines it applies to are the ones it is too long for.
-      if ((compiled.current && calibrated.current) || now - firstFrameAt.current > 2.5) {
+      // The escape, timed from mount, covers a driver that never resolves
+      // compileAsync and a calibration still stepping down: by then the
+      // whole scene is in the graph, so the worst case is a soft first
+      // frame, never a missing warehouse.
+      if (
+        mounted &&
+        ((compiled.current && calibrated.current) || now - firstFrameAt.current > 2.5)
+      ) {
         painted.current = true;
         onReady?.();
       }
     }
-  });
+    // -1: before every other frame callback. This writes the eased progress
+    // and the truck and world transforms that the crates, traffic, gate and
+    // yard all read; at the default priority their callbacks could run
+    // first in a frame and pose against the previous frame. During a fling
+    // that is metres of world slide, which left the loaded crates floating
+    // behind the trailer. Negative priorities do not take over rendering.
+  }, -1);
 
   return (
     <>
@@ -5732,13 +5782,20 @@ function Rig({
       <Horizon />
 
       <Suspense fallback={null}>
-        <group ref={truck}>
+        <group ref={truck} name="hero-truck">
           <Truck wheels={wheels} doors={doors} quality={quality} />
 
           {/* Container interior: a warm source and the patch it throws on the
               ground behind the open doors. Inside the truck group, so both
               ride the yard manoeuvre instead of being left at the origin. */}
           <pointLight ref={cabin} position={[0, 2.2, -4.1]} color="#ffcf94" intensity={0} distance={7.5} />
+          {/* Soft fill on the camera side of the truck, riding with it.
+              Directional, not a point light: a point 4.5 m off the flank
+              put its specular hotspot on the ground between lens and truck
+              in every shot. Unshadowed, so it lifts the bodywork's shadow
+              side without a second shadow. */}
+          <primitive object={fillTarget} position={[0, 1.8, 0]} />
+          <directionalLight ref={fill} position={[-6, 5, 6]} target={fillTarget} color="#fff1dc" intensity={0.55} />
           <mesh ref={spill} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.06, -7.2]}>
             <planeGeometry args={[3.4, 5]} />
             <meshBasicMaterial
@@ -5821,11 +5878,18 @@ const RigMemo = memo(Rig);
 function HeroScene({
   progress,
   onReady,
+  onFail,
 }: {
   progress: MutableRefObject<number>;
   onReady?: () => void;
+  /** The scene will not be shown: no usable GPU, or the context was lost.
+      The host keeps its poster up and drops its loading state. */
+  onFail?: () => void;
 }) {
   const device = useMemo(probeDevice, []);
+  useEffect(() => {
+    if (device.software) onFail?.();
+  }, [device, onFail]);
 
   // Level of detail is picked once at mount. Phones get fewer containers,
   // a coarser sea, no shadows and a capped pixel ratio — the frame budget
@@ -5963,8 +6027,14 @@ function HeroScene({
       // program inside the first frames. Measured on a 4x-throttled phone:
       // Lighthouse TBT 846–954ms with it, 829–833ms without. Development keeps
       // the check, which is the only place a shader error can be introduced.
-      onCreated={({ gl }) => {
+      onCreated={({ gl, scene }) => {
         if (process.env.NODE_ENV === "production") gl.debug.checkShaderErrors = false;
+        // A lost context leaves a frozen or blank canvas over the poster.
+        gl.domElement.addEventListener("webglcontextlost", () => onFail?.(), { once: true });
+        // Test hook for scripts/hero-regression.mjs, behind a query flag.
+        if (/[?&]hero-debug\b/.test(window.location.search)) {
+          (window as unknown as { __hero?: { scene: THREE.Scene } }).__hero = { scene };
+        }
       }}
       aria-hidden
     >

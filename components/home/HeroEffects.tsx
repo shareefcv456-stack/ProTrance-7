@@ -82,7 +82,11 @@ export default function Effects({
     // Tight radius and a threshold above the lit sky: only lamp filaments and
     // chrome highlights bloom. A wide radius here is indistinguishable from
     // a soft-focus filter over the whole frame.
-    const glow = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.45, 0.32, 1.05);
+    //
+    // 1.6, not 1.05: under the yard floods the white trailer's lit flank
+    // crossed 1.05 and haloed into a haze. Every intended emitter sits far
+    // above this (headlamps ~4.5, flood heads 7), so they still bloom.
+    const glow = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.45, 0.32, 1.6);
     comp.addPass(glow);
     comp.addPass(new OutputPass());
     return { composer: comp, bloom: glow };

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Component, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
   AnimatePresence,
@@ -9,17 +9,15 @@ import {
   useAnimationFrame,
   useMotionValue,
   useReducedMotion,
-  useTransform,
-  type MotionValue,
 } from "framer-motion";
 import { StaggerText } from "@/components/motion/StaggerText";
 import { pace, type Pace } from "@/lib/pace";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
-/** 154 bytes of the first frame, blurred, carried inline in the HTML.
+/** 200 bytes of the first frame, blurred, carried inline in the HTML.
  *
- * The poster below is 33kB and needs its own request: on the 3G profile the
+ * The poster below is 38kB and needs its own request: on the 3G profile the
  * round trip put the truck on screen at ~1.25s. This costs no request at
  * all — it arrives with the markup, so it paints as soon as the hero does
  * and the composition (dark dock left, sky right, apron below) is there
@@ -27,7 +25,7 @@ const ease = [0.22, 1, 0.36, 1] as const;
  * scene's own sky, so the two agree and the hand-off is a sharpening rather
  * than a change of picture, not a jump to a different image. */
 const LQIP =
-  "data:image/webp;base64,UklGRpIAAABXRUJQVlA4IIYAAAAQBQCdASogABQAPt1cp0yopSOiMBgMARAbiWUAwoA0gVWKKZs9XtT7u4kycaYyqEBAAPulyxnyxvev5EJ9BJLce8oo5NPAZPNQGcZR0ctLcHqHVdkAnjFsDUOGZTNqaJJar56sTVFD7HkS2DdirLnxv/p3HK05o+DeFz/dRVgXZpDurHAAAA==";
+  "data:image/webp;base64,UklGRqoAAABXRUJQVlA4IJ4AAACwBACdASogABQAPsVSo0unpSMhsAwA8BiJYwDA3CHPLHfYuHK9OWfJ/l1dVswAAP6EFEK0ZhPBTYDiS2caKdG0D6RIQKffgTtUG76aOKv8fkioRsU+P24s/hNmHOWlPhbRzviR85bE5RUbPam3kMlZvwwG+Cc3tg1o8bABaGwdv5qCvqo6zhLfJBOnsoD9q9GbZVzyAYr4sIpXamd4AA==";
 
 /* Imported by hand, after the first paint, rather than through next/dynamic:
    Next preloads a dynamic() chunk from the page's own payload, so three.js,
@@ -35,6 +33,21 @@ const LQIP =
    hero copy on a slow connection. PageSpeed's simulated LCP counts every
    request that starts before the LCP paint, and those were most of its 4.4s. */
 type SceneComponent = typeof import("./HeroScene").default;
+
+/** A scene that throws (no context, a driver fault) reports it and renders
+    nothing, so the poster stays up instead of the page losing its root. */
+class SceneBoundary extends Component<{ onError: () => void; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch() {
+    this.props.onError();
+  }
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
 
 /** Serve phones the poster instead of the WebGL hero.
  *
@@ -62,14 +75,18 @@ const PHONE_QUERY = "(max-width: 767px), (pointer: coarse)";
 /* ── Scroll-driven 3D hero ───────────────────────────────────────────────
    GSAP ScrollTrigger is the single scroll source. It writes to a ref (read
    inside the canvas's useFrame, so scrolling causes no React render) and to
-   a MotionValue (so the DOM overlays below can bind with useTransform). */
+   a MotionValue (paced below, which drives the chapter state). */
 
-/** Where each stage starts, as scroll progress. Explicit rather than four
-    equal quarters, because the story is not evenly paced: the dock earns
-    nearly a third of the scroll and the yard arrival only the last fifth.
-    Equal quarters put "In transit" on screen while the forklift was still
-    working. */
-const STAGE_AT = [0, 0.5, 0.7, 0.86];
+/** Where each stage starts, as scroll progress — read off HeroScene's own
+    timeline, not picked by eye. The truck loads until 0.52 and clears the
+    warehouse gate at ~0.583 (travelled() reaching EXIT_Z), so "In transit"
+    cannot start before then; the coastal bend nears its apex past 0.67; the
+    terminal barrier starts lifting at 0.82 (GATE_HOLD_A). Retime the scene
+    and these move with it. */
+const STAGE_AT = [0, 0.583, 0.67, 0.82];
+/** Dead band around each boundary, so a scroll parked on the line cannot
+    flicker the chapter. */
+const STAGE_HYST = 0.003;
 
 /** The story completes at this share of the pinned scroll; the rest is a
     hold on the final frame. The story trails the scroll by design (see
@@ -104,19 +121,6 @@ const chapters = [
   },
 ];
 
-/** Scroll band for chapter `i`: fade in, hold, fade out. The first chapter
-    is opaque from the top and the last holds to the end, so the scene never
-    drops to bare photo between crossfades. */
-const FADE = 0.05;
-function band(i: number, n: number): [number[], number[]] {
-  const from = STAGE_AT[i];
-  const to = i === n - 1 ? 1 : STAGE_AT[i + 1];
-  const input = [from - FADE, from + FADE, to - FADE, to + FADE];
-  if (i === 0) [input[0], input[1]] = [-1, -0.5];
-  if (i === n - 1) [input[2], input[3]] = [2, 3];
-  return [input, [0, 1, 1, 0]];
-}
-
 /** Where the badge, CTAs and cards come in: the final beat, as the truck
     finishes reversing into the bay and its rear doors swing open (0.96 in
     HeroScene). Until then the story has the screen to itself. They go again
@@ -132,38 +136,33 @@ const uiTransition = (show: boolean, at: number, duration: number) => ({
   ease,
 });
 
-/** The chapter copy's resting state. One object, so the entry can be told
-    apart from the exit when an animation reports that it has finished. */
-const COPY_IN = { opacity: 1, y: 0 };
+/** Chapter copy swap. Short enough that the shortest chapter (02, ~0.43s at
+    the pace cap) still lands fully opaque, so the copy is never caught
+    mid-fade when the scroll comes to rest. */
+const COPY_OUT = 0.16;
+const COPY_IN_S = 0.3;
 
-/** Which stage a given progress is in. */
-function stageAt(p: number) {
+/** Which stage a given progress is in, holding `prev` inside the dead band. */
+function stageAt(p: number, prev: number) {
   let i = 0;
-  for (let k = 1; k < STAGE_AT.length; k++) if (p >= STAGE_AT[k]) i = k;
+  for (let k = 1; k < STAGE_AT.length; k++) {
+    if (p >= STAGE_AT[k] + (k > prev ? STAGE_HYST : -STAGE_HYST)) i = k;
+  }
   return i;
 }
 
-/** Chapter index in the corner — all four always visible, the active one lit. */
-function ChapterTick({
-  index,
-  progress,
-}: {
-  index: number;
-  progress: MotionValue<number>;
-}) {
-  const [input, output] = band(index, chapters.length);
-  const active = useTransform(progress, input, output);
-  const opacity = useTransform(active, (v) => 0.3 + v * 0.7);
-  const width = useTransform(active, [0, 1], [12, 34]);
-
-  // Sub-text belongs to the active stage only. The row keeps a fixed height
-  // so fading one in never shifts the stages below it.
-  const subOpacity = useTransform(active, [0.55, 1], [0, 1]);
-  const subX = useTransform(active, [0.55, 1], [10, 0]);
-
+/** Chapter index in the corner — all four always visible, the active one lit.
+    Driven by the same `stage` as the headline, so the two cannot disagree. */
+function ChapterTick({ index, active }: { index: number; active: boolean }) {
+  const t = { duration: 0.35, ease };
   return (
     <div className="flex h-8 flex-col items-end justify-start sm:h-9">
-      <m.div style={{ opacity }} className="flex items-center gap-2 sm:gap-3">
+      <m.div
+        initial={false}
+        animate={{ opacity: active ? 1 : 0.3 }}
+        transition={t}
+        className="flex items-center gap-2 sm:gap-3"
+      >
         {/* Numbers only on a phone. The stacked layout puts the headline
             directly under this column, and the full labels ran across it —
             and the active stage's name is already spelled out at the top of
@@ -172,13 +171,20 @@ function ChapterTick({
           <span className="text-accent">{String(index + 1).padStart(2, "0")}</span>
           <span className="hidden sm:inline"> {chapters[index].label}</span>
         </span>
-        <m.span style={{ width }} className="h-px bg-accent" />
+        <m.span
+          initial={false}
+          animate={{ width: active ? 34 : 12 }}
+          transition={t}
+          className="h-px bg-accent"
+        />
       </m.div>
       {/* Sub-text belongs to the active stage only, and only where there is
           room for it — on a phone the column is already the width of the
-          label. */}
+          label. The row keeps a fixed height so it never shifts the others. */}
       <m.span
-        style={{ opacity: subOpacity, x: subX }}
+        initial={false}
+        animate={{ opacity: active ? 1 : 0, x: active ? 0 : 10 }}
+        transition={t}
         className="mt-1 hidden text-[10px] leading-none text-white/55 sm:block"
       >
         {chapters[index].sub}
@@ -285,6 +291,19 @@ export function HomeHero() {
   }, []);
   const showScene = !reduce && !(SKIP_3D_ON_MOBILE && phone);
   const onReady = useCallback(() => setPainted(true), []);
+  // The scene will not arrive: no usable GPU, a lost context, a render error
+  // or a chunk that failed to load. The poster is the fallback and the copy
+  // still runs off the scroll; the loader must not spin over it forever.
+  const [failed, setFailed] = useState(false);
+  const onFail = useCallback(() => setFailed(true), []);
+  // Only once the wait is long enough to notice. On a healthy connection the
+  // scene replaces the poster inside a second and this never shows.
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (!showScene || painted || failed) return;
+    const id = window.setTimeout(() => setSlow(true), 1200);
+    return () => window.clearTimeout(id);
+  }, [showScene, painted, failed]);
 
   /* Nothing heavy starts until the hero's first frame has been presented.
 
@@ -339,9 +358,14 @@ export function HomeHero() {
   useEffect(() => {
     if (!afterPaint) return;
     let cancelled = false;
-    void import("./HeroScene").then((mod) => {
-      if (!cancelled) setHeroScene(() => mod.default);
-    });
+    import("./HeroScene").then(
+      (mod) => {
+        if (!cancelled) setHeroScene(() => mod.default);
+      },
+      () => {
+        if (!cancelled) setFailed(true);
+      },
+    );
     return () => {
       cancelled = true;
     };
@@ -391,40 +415,32 @@ export function HomeHero() {
     };
   }, [reduce, scroll, afterPaint]);
 
-  // Which chapter's copy is showing. This is React state rather than a
-  // MotionValue on purpose: the text has to change as a discrete swap, not a
-  // continuous interpolation, and it fires four times across the whole
-  // scroll — which is nothing like the per-frame updates the scene ref
-  // exists to avoid.
+  // Which chapter is showing — the one value the index ticks, the stage
+  // marker, the headline and the paragraph all read, taken straight off the
+  // same eased progress the scene renders from. React state rather than a
+  // MotionValue on purpose: the text changes as a discrete swap, four times
+  // across the whole scroll.
   //
-  // Stepped, one chapter at a time. The swap is an exit plus an entry, 0.84s
-  // together, and the story can cross the whole of chapter 03 in half a
-  // second — so jumping straight to wherever the story had got to meant a
-  // fling showed 02 and then 04. Now the copy walks 02 → 03 → 04 (or back),
-  // each step waiting for the previous copy to land, and catches up with
-  // the scene a moment later rather than cutting past a beat.
+  // It used to step one chapter at a time, each swap waiting for the last
+  // to land. That chain is what put the copy out of step with the scene and
+  // left it mid-fade at rest. It is not needed to avoid skipping a beat:
+  // lib/pace caps the story at 0.22/s, so even the shortest chapter is on
+  // screen longer than one swap (COPY_OUT + COPY_IN_S).
   const [stage, setStage] = useState(0);
-  const shown = useRef(0);
-  const target = useRef(0);
-  const swapping = useRef(false);
-  const stepStage = useCallback(() => {
-    if (shown.current === target.current) {
-      swapping.current = false;
-      return;
-    }
-    shown.current += Math.sign(target.current - shown.current);
-    swapping.current = true;
-    setStage(shown.current);
-  }, []);
+  const stageRef = useRef(0);
+  // The word-by-word reveal is the page-load moment only. Replaying it on
+  // the way back up held the headline off-screen for ~1.5s.
+  const intro = useRef(true);
   const [uiIn, setUiIn] = useState(false);
   const uiShown = useRef(false);
   // Runs every frame the story moves, so it only touches React when a value
   // actually changes.
   useMotionValueEvent(eased, "change", (v) => {
-    const next = stageAt(v);
-    if (next !== target.current) {
-      target.current = next;
-      if (!swapping.current) stepStage();
+    const next = stageAt(v, stageRef.current);
+    if (next !== stageRef.current) {
+      stageRef.current = next;
+      intro.current = false;
+      setStage(next);
     }
     // Hysteresis, so a scroll parked right on the line cannot flicker it.
     const ui = uiShown.current ? v >= UI_OUT_AT : v >= UI_AT;
@@ -497,8 +513,12 @@ export function HomeHero() {
             >
               {/* First frame of the scene as a static image, behind the
                   canvas and in the initial HTML so the preload scanner finds
-                  it immediately. 33kB desktop / 19kB mobile of WebP — about
+                  it immediately. 38kB desktop / 15kB mobile of WebP — about
                   165ms on the 3G profile that waits 3.9s for the canvas.
+
+                  Re-capture both files (and the LQIP above) whenever the
+                  scene's opening frame changes: a stale poster made the
+                  truck jump and ghost through the crossfade to the canvas.
 
                   Two files rather than one scaled: the camera framing at
                   p = 0 is a landscape composition with the truck right of
@@ -532,18 +552,47 @@ export function HomeHero() {
                   className="absolute inset-0 h-full w-full object-cover"
                 />
               </picture>
-              {showScene && HeroScene && (
+              {showScene && HeroScene && !failed && (
                 <m.div
                   className="absolute inset-0"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: painted ? 1 : 0 }}
                   transition={{ duration: 0.9, ease }}
                 >
-                  <HeroScene progress={progress} onReady={onReady} />
+                  <SceneBoundary onError={onFail}>
+                    <HeroScene progress={progress} onReady={onReady} onFail={onFail} />
+                  </SceneBoundary>
                 </m.div>
               )}
             </div>
 
+
+            {/* Loading state, over the poster, while the 3D scene is still
+                coming in. The poster is the scene's own first frame, so the
+                hero already looks right; this only says it is not live yet. */}
+            <AnimatePresence>
+              {showScene && slow && !painted && !failed && (
+                <m.div
+                  role="status"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.4, ease }}
+                  className="absolute bottom-6 right-4 z-10 flex w-44 flex-col gap-2 sm:right-6 rounded-lg border border-white/15 bg-ink/70 px-4 py-3 sm:flex"
+                >
+                  <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-white/80">
+                    <span className="text-accent">●</span> Loading 3D scene
+                  </span>
+                  <span className="relative h-px overflow-hidden bg-white/15">
+                    <m.span
+                      className="absolute inset-y-0 left-0 w-1/3 bg-accent"
+                      animate={{ x: ["-100%", "300%"] }}
+                      transition={{ duration: 1.4, ease: "easeInOut", repeat: Infinity }}
+                    />
+                  </span>
+                </m.div>
+              )}
+            </AnimatePresence>
 
             {/* Chapter index.
 
@@ -555,7 +604,7 @@ export function HomeHero() {
             {showScene && (
               <div className="absolute right-4 top-[4.6rem] z-10 flex flex-col items-end gap-1 sm:right-6 sm:top-[5.5rem]">
                 {chapters.map((c, i) => (
-                  <ChapterTick key={c.label} index={i} progress={eased} />
+                  <ChapterTick key={c.label} index={i} active={i === stage} />
                 ))}
               </div>
             )}
@@ -592,17 +641,13 @@ export function HomeHero() {
                 <AnimatePresence mode="wait" initial={false}>
                   <m.div
                     key={stage}
-                    initial={reduce ? false : { opacity: 0, y: 16 }}
-                    animate={COPY_IN}
-                    exit={reduce ? undefined : { opacity: 0, y: -12 }}
-                    // Quicker while the copy is still catching up with the
-                    // scene after a fling, so the in-between chapter still
-                    // shows but the copy lands with the story instead of a
-                    // second after it. A single step keeps the full swap.
-                    transition={{ duration: target.current !== stage ? 0.2 : 0.42, ease }}
-                    // The entry landing — not the exit, which reports here
-                    // too — is what lets the next chapter step on.
-                    onAnimationComplete={(d) => d === COPY_IN && stepStage()}
+                    initial={reduce ? false : { opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0, transition: { duration: COPY_IN_S, ease } }}
+                    exit={
+                      reduce
+                        ? undefined
+                        : { opacity: 0, y: -8, transition: { duration: COPY_OUT, ease: "easeIn" } }
+                    }
                   >
                     {!reduce && (
                       <span
@@ -623,7 +668,7 @@ export function HomeHero() {
                     <h1 className="max-w-[720px] font-display text-[clamp(1.75rem,5.4vw,4rem)] squat:text-[1.6rem] short:text-[clamp(1.75rem,min(5.4vw,7.5vh),4rem)] font-600 leading-[1.04] tracking-tighter text-white">
                       {copy.title.map((line, i) => (
                         <span key={line} className="block">
-                          {stage === 0 && !reduce ? (
+                          {stage === 0 && intro.current && !reduce ? (
                             <StaggerText text={line} delay={0.1 + i * 0.18} />
                           ) : (
                             line

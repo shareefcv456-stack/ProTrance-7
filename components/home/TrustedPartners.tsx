@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { m, useReducedMotion } from "framer-motion";
+import { m } from "framer-motion";
+import { useReducedMotion } from "@/components/motion/useReducedMotion";
 import { Reveal } from "@/components/motion/Reveal";
 
 const ease = [0.22, 1, 0.36, 1] as const;

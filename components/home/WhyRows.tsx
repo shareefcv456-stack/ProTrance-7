@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { m, useReducedMotion } from "framer-motion";
+import { m } from "framer-motion";
+import { useReducedMotion } from "@/components/motion/useReducedMotion";
 import { advantages } from "@/lib/site";
 import { images } from "@/lib/images";
 

@@ -5,12 +5,12 @@ import Link from "next/link";
 import {
   cubicBezier,
   m,
-  useReducedMotion,
   useScroll,
   useSpring,
   useTransform,
   type MotionValue,
 } from "framer-motion";
+import { useReducedMotion } from "@/components/motion/useReducedMotion";
 
 import { coreValues } from "@/lib/site";
 import { Reveal } from "@/components/motion/Reveal";

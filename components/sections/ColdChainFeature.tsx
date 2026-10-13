@@ -1,6 +1,7 @@
 "use client";
 
-import { m, useReducedMotion } from "framer-motion";
+import { m } from "framer-motion";
+import { useReducedMotion } from "@/components/motion/useReducedMotion";
 import { fleet } from "@/lib/site";
 import { images } from "@/lib/images";
 import { SectionHeading } from "@/components/ui/SectionHeading";
