@@ -6,6 +6,7 @@ import { ContactForm } from "@/components/ContactForm";
 import { Reveal } from "@/components/motion/Reveal";
 
 export const metadata: Metadata = {
+  alternates: { canonical: "/contact" },
   title: "Contact",
   description:
     "Get in touch with PRO TRANS LOGISTICS LLP — call, email, or send an enquiry. Headquartered at CVM Tower, Malappuram, Kerala.",

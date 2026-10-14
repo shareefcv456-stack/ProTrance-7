@@ -8,10 +8,11 @@ import {
   useMotionValueEvent,
   useAnimationFrame,
   useMotionValue,
-  useReducedMotion,
 } from "framer-motion";
 import { StaggerText } from "@/components/motion/StaggerText";
+import { useReducedMotion } from "@/components/motion/useReducedMotion";
 import { pace, type Pace } from "@/lib/pace";
+import { probeGpuOffThread, SOFTWARE_GPU } from "@/lib/gpu-probe";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
@@ -354,9 +355,27 @@ export function HomeHero() {
     };
   }, [showScene]);
 
+  /* Renderer string, read in a worker from mount: null while pending, "" if
+     unknown. A software rasteriser is told apart here, before three.js and the
+     scene (~250k) are fetched, and without the seconds-long main-thread stall
+     its first WebGL context costs. See lib/gpu-probe. */
+  const [renderer, setRenderer] = useState<string | null>(null);
+  useEffect(() => {
+    if (!showScene) return;
+    let live = true;
+    void probeGpuOffThread().then((name) => {
+      if (!live) return;
+      if (SOFTWARE_GPU.test(name)) setFailed(true);
+      else setRenderer(name);
+    });
+    return () => {
+      live = false;
+    };
+  }, [showScene]);
+
   const [HeroScene, setHeroScene] = useState<SceneComponent | null>(null);
   useEffect(() => {
-    if (!afterPaint) return;
+    if (!afterPaint || renderer === null) return;
     let cancelled = false;
     import("./HeroScene").then(
       (mod) => {
@@ -369,7 +388,7 @@ export function HomeHero() {
     return () => {
       cancelled = true;
     };
-  }, [afterPaint]);
+  }, [afterPaint, renderer]);
 
   useEffect(() => {
     // Waits for the first paint with the scene chunk, for the same reason.
@@ -560,7 +579,7 @@ export function HomeHero() {
                   transition={{ duration: 0.9, ease }}
                 >
                   <SceneBoundary onError={onFail}>
-                    <HeroScene progress={progress} onReady={onReady} onFail={onFail} />
+                    <HeroScene progress={progress} renderer={renderer ?? ""} onReady={onReady} onFail={onFail} />
                   </SceneBoundary>
                 </m.div>
               )}

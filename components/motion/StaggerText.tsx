@@ -28,7 +28,10 @@ export function StaggerText({
   }
 
   return (
-    <span className={className} aria-label={text}>
+    // The words are aria-hidden spans; the sentence is read once from the
+    // sr-only copy. aria-label is not allowed on a role-less span.
+    <span className={className}>
+      <span className="sr-only">{text}</span>
       {words.map((word, i) => (
         <span
           key={`${word}-${i}`}

@@ -9,6 +9,7 @@ import { CtaBand } from "@/components/sections/CtaBand";
 import { SectionHeading } from "@/components/ui/SectionHeading";
 
 export const metadata: Metadata = {
+  alternates: { canonical: "/services" },
   title: "Services",
   description:
     "Ten FMCG-focused logistics services — cold chain, fragile handling, express replenishment, reverse logistics, real-time tracking, and interstate compliance.",
