@@ -4,6 +4,7 @@ import "./globals.css";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { MotionProvider } from "@/components/motion/MotionProvider";
+import { siteUrl } from "@/lib/site";
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
@@ -33,7 +34,7 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://www.protransllp.com"),
+  metadataBase: new URL(siteUrl),
   title: {
     default: "PRO TRANS Logistics — Speed. Safety. Reliability.",
     template: "%s · PRO TRANS Logistics",
@@ -54,7 +55,6 @@ export const metadata: Metadata = {
     description:
       "Technology-driven FMCG transportation across South India with Pan-India connectivity.",
     type: "website",
-    url: "https://www.protransllp.com",
   },
 };
 

@@ -56,7 +56,7 @@ function CoreCard({
             href="/about"
             className="mt-auto inline-flex w-fit items-center gap-1.5 pt-6 text-xs font-semibold uppercase tracking-[0.1em] text-accent-deep transition-colors duration-300 hover:text-ink"
           >
-            Read more
+            Read more<span className="sr-only"> about {title}</span>
             <svg
               className="h-3.5 w-3.5"
               viewBox="0 0 16 16"

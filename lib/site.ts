@@ -1,5 +1,13 @@
 // Single source of truth for company content across all pages.
 
+/** Origin used for canonical URLs, Open Graph and the sitemap. Vercel sets
+    VERCEL_PROJECT_PRODUCTION_URL to the project's production domain, so this
+    follows www.protransllp.com automatically once that domain is attached;
+    until then it is the vercel.app address that actually serves the site. */
+export const siteUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL
+  ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+  : "https://pro-trance-7.vercel.app";
+
 export const company = {
   name: "PRO TRANS LOGISTICS LLP",
   shortName: "PRO TRANS",

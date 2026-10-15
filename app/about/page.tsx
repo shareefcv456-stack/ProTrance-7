@@ -12,6 +12,7 @@ import { TreatedImage } from "@/components/ui/TreatedImage";
 import { Reveal } from "@/components/motion/Reveal";
 
 export const metadata: Metadata = {
+  alternates: { canonical: "/about" },
   title: "About Us",
   description:
     "Founded in 2024 in Malappuram, PRO TRANS LOGISTICS LLP is redefining FMCG logistics across South India with a modern, trackable Ashok Leyland fleet.",

@@ -38,6 +38,7 @@ function useEffectsChunk(enabled: boolean) {
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { pace, type Pace } from "@/lib/pace";
+import { SOFTWARE_GPU } from "@/lib/gpu-probe";
 
 /* ── Scroll-driven 3D hero ───────────────────────────────────────────────
    Four phases along one continuous drive. The truck stays at the origin and
@@ -681,7 +682,10 @@ function useProceduralEnv() {
   const gl = useThree((s) => s.gl);
   const scene = useThree((s) => s.scene);
 
-  useEffect(() => {
+  // Layout, not passive: a passive effect flushed after the first frame, so
+  // precompile built every lit program without the environment and the first
+  // real draw rebuilt 19 of them on the main thread.
+  useLayoutEffect(() => {
     const c = document.createElement("canvas");
     c.width = 1024;
     c.height = 512;
@@ -1657,7 +1661,9 @@ const WEAK_GPU =
 const MEDIUM_GPU =
   /\bIris\b|Radeon(?:\(TM\))? (?:Vega|Graphics)|Adreno \(TM\) 6[2-9]\d|Mali-G[67]\d/i;
 
-function probeDevice(): DeviceProfile {
+/** `known` is the renderer string HomeHero already read off the main thread;
+    when it is there, no probe context is created here at all. */
+function probeDevice(known = ""): DeviceProfile {
   const fail: DeviceProfile = { software: false, modest: false, weak: false, gpu: "" };
   if (typeof window === "undefined" || typeof document === "undefined") return fail;
 
@@ -1669,6 +1675,14 @@ function probeDevice(): DeviceProfile {
   let software = false;
   let weak = false;
   let gpu = "";
+  if (known) {
+    return {
+      software: SOFTWARE_GPU.test(known),
+      weak: WEAK_GPU.test(known),
+      modest: modest || MEDIUM_GPU.test(known),
+      gpu: known,
+    };
+  }
   try {
     const probe = document.createElement("canvas");
     const gl = probe.getContext("webgl2") ?? probe.getContext("webgl");
@@ -1677,7 +1691,7 @@ function probeDevice(): DeviceProfile {
       const name = info
         ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL) ?? "")
         : "";
-      software = /swiftshader|llvmpipe|softpipe|basic render|software|微软/i.test(name);
+      software = SOFTWARE_GPU.test(name);
       weak = WEAK_GPU.test(name);
       gpu = name;
       if (MEDIUM_GPU.test(name)) modest = true;
@@ -5376,6 +5390,8 @@ function Rig({
   // canvas before either is what put the cost on screen.
   const compiling = useRef(false);
   const compiled = useRef(false);
+  // Materials held out of the draw while precompile runs. See below.
+  const held = useRef<THREE.Material[] | null>(null);
   const calibrated = useRef(false);
   const world = useRef<THREE.Group>(null);
   const truck = useRef<THREE.Group>(null);
@@ -5715,11 +5731,42 @@ function Rig({
     if (!painted.current) {
       const mounted = truck.current !== null && world.current !== null;
       if (mounted && firstFrameAt.current < 0) firstFrameAt.current = now;
-      if (!compiling.current && mounted) {
-        compiling.current = true;
-        void precompile(gl, scene, camera, quality).then(() => {
-          compiled.current = true;
+      if (!compiling.current) {
+        // Nothing is drawn until the programs are built. The first frames
+        // used to render whatever had mounted so far, and that render compiled
+        // and linked every program synchronously itself — a 1.3s main-thread
+        // task on a 4x-throttled phone, leaving the async path below nothing
+        // to do. Hidden materials drop out of the render and shadow lists
+        // while compile() still walks every one of them, and lights stay
+        // counted, so the programs are keyed exactly as they will be drawn.
+        // Re-run each frame until mount, because the truck and the world
+        // resolve in separate Suspense boundaries. The poster covers it all.
+        const list = (held.current ??= []);
+        scene.traverse((o) => {
+          const m = (o as THREE.Mesh).material;
+          for (const x of Array.isArray(m) ? m : m ? [m] : []) {
+            if (x.visible) {
+              x.visible = false;
+              list.push(x);
+            }
+          }
         });
+        if (mounted) {
+          compiling.current = true;
+          void precompile(gl, scene, camera, quality).then(() => {
+            compiled.current = true;
+          });
+        }
+      }
+      // Released on the same escape as the reveal, so the reveal frame is
+      // never an empty world.
+      if (
+        held.current &&
+        mounted &&
+        (compiled.current || now - firstFrameAt.current > 2.5)
+      ) {
+        for (const x of held.current) x.visible = true;
+        held.current = null;
       }
       // The escape, timed from mount, covers a driver that never resolves
       // compileAsync and a calibration still stepping down: by then the
@@ -5877,16 +5924,19 @@ const RigMemo = memo(Rig);
 
 function HeroScene({
   progress,
+  renderer = "",
   onReady,
   onFail,
 }: {
   progress: MutableRefObject<number>;
+  /** Renderer string from probeGpuOffThread, or "" if it could not tell. */
+  renderer?: string;
   onReady?: () => void;
   /** The scene will not be shown: no usable GPU, or the context was lost.
       The host keeps its poster up and drops its loading state. */
   onFail?: () => void;
 }) {
-  const device = useMemo(probeDevice, []);
+  const device = useMemo(() => probeDevice(renderer), [renderer]);
   useEffect(() => {
     if (device.software) onFail?.();
   }, [device, onFail]);
