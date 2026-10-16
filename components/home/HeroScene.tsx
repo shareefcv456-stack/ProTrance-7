@@ -338,6 +338,15 @@ function park(p: number) {
   };
 }
 
+/** Yard epilogue, once the reverse is done: the doors open, the load comes
+    off onto the quay behind the trailer, and only then do the doors shut.
+    All of it sits in the last 0.03 of progress, which lib/pace gives a
+    scroll share of its own so none of it is rushed. */
+const DOORS_OPEN = 0.9735;
+const UNLOAD_A = DOORS_OPEN;
+const UNLOAD_B = 0.9905;
+const DOORS_SHUT = 0.9995;
+
 /** The terminal gate, in world-local z, and the run the truck holds at.
     GATE_STOP is set from the gate: the nose sits 4.3 ahead of the origin, so
     stopping here puts it 1.7 short of the boom. Close enough to read as
@@ -2354,7 +2363,7 @@ function BuiltTruck({
           Each leaf carries a hydraulic ram and a locking bar named for the
           rig, which extends the ram as the leaf swings — secondary motion is
           what stops a hinge reading as a flat rotate. */}
-      <group ref={doors} position={[0, 2.5, -5.0]}>
+      <group ref={doors} name="hero-doors" position={[0, 2.5, -5.0]}>
         {[-1, 1].map((side) => (
           <group key={side} name={side > 0 ? "right" : "left"} position={[side * 1.28, 0, 0]}>
             <mesh position={[(-side * 1.28) / 1, 0, 0]} castShadow={cast}>
@@ -3161,6 +3170,34 @@ const STACK: Array<[number, number]> = [
   [-7.35, -15.1],
 ];
 
+/** The quay stack the load is unloaded to, truck-local: same lanes and two
+    high as it rode, but past the reach of the door leaves (2.56 from hinges
+    at x = ±1.28, z = -5), so the doors can shut without touching it. */
+const QUAY_Z = -13;
+/** Off the sill, past the open doors: the crate's near face at -5.375. */
+const SILL_Z = -5.95;
+/** Crate centre resting on the yard slab (0.02) and on a crate below. */
+const QUAY_Y = [0.545, 1.595];
+/** Top tier first — and so to the bottom of the new stack. */
+const UNLOAD_ORDER = [3, 2, 1, 0];
+
+/** Truck-local pose of crate `i` while it is unloaded. One at a time, each
+    starting as the last one leaves the sill: slide out level, then travel
+    to the stack and settle, set down after it is clear of the doorway. */
+function unloadPose(i: number, p: number): [number, number, number] {
+  const j = UNLOAD_ORDER.indexOf(i);
+  const k = clamp01((clamp01((p - UNLOAD_A) / (UNLOAD_B - UNLOAD_A)) - j * 0.18) / 0.46);
+  const [x, y, z] = SLOTS[i];
+  const out = smooth(clamp01(k / 0.3));
+  const across = smooth(clamp01((k - 0.3) / 0.55));
+  const down = smooth(clamp01((k - 0.45) / 0.55));
+  return [
+    x,
+    y + (QUAY_Y[j < 2 ? 0 : 1] - y) * down,
+    z + (SILL_Z - z) * out + (QUAY_Z - SILL_Z) * across,
+  ];
+}
+
 /** Crew walking legs: [fromX, fromZ, toX, toZ, speed, phase offset]. */
 const CREW: Array<[number, number, number, number, number, number]> = [
   // Index 0 is the sack-truck worker on purpose: the frame loop pairs child
@@ -3413,7 +3450,8 @@ function Warehouse({
       }
 
       crates.current.children.forEach((crate, i) => {
-        const [tx, ty, tz] = SLOTS[i];
+        // Aboard, or once the truck is parked, on its way to the quay.
+        const [tx, ty, tz] = p > UNLOAD_A ? unloadPose(i, p) : SLOTS[i];
 
         // Placed: rides the truck from here, yard manoeuvre included.
         if (i < active || (i === active && k >= 0.6)) {
@@ -5211,7 +5249,7 @@ function Port({
             could never fit in one, hanging 1.3 m off the ground behind the
             parked trailer and a metre into its body for the whole yard beat.
             The truck's real cargo is the four crates loaded at the dock, and
-            they stay aboard; the crew at the doors does the unloading. */}
+            they come off onto the quay behind it — see unloadPose(). */}
         <group position={[-2, 21.5, 0]}>
           <mesh castShadow>
             <boxGeometry args={[6.4, 1.2, 2.6]} />
@@ -5502,7 +5540,8 @@ function Rig({
   }, []);
 
   useFrame(({ camera, scene, clock, gl }, delta) => {
-    pace(paced.current, clamp01(progress.current), delta);
+    // Raw scroll in story() units, 0..STORY_LENGTH — not clamped to 1.
+    pace(paced.current, progress.current, delta);
     eased.current = story(paced.current.value);
     const p = eased.current;
     // Read by scripts/hero-regression.mjs to know which beat a frame is on.
@@ -5617,7 +5656,12 @@ function Rig({
       (1 - smooth(clamp01((p - (LOAD_END - 0.06)) / 0.05)));
     // Held until the reverse is done — doors swinging open mid-manoeuvre was
     // the tell that nothing was actually parking.
-    const open = Math.max(shut, smooth(clamp01((p - (BACK_B - 0.01)) / 0.03))) * 2.0;
+    // Fully open by DOORS_OPEN, and shut again only once the last crate is
+    // down on the quay (UNLOAD_B) — never on a load still coming out.
+    const yard =
+      smooth(clamp01((p - (BACK_B - 0.01)) / (DOORS_OPEN - (BACK_B - 0.01)))) *
+      (1 - smooth(clamp01((p - UNLOAD_B) / (DOORS_SHUT - UNLOAD_B))));
+    const open = Math.max(shut, yard) * 2.0;
 
     if (doors.current) {
       doors.current.children.forEach((d) => {

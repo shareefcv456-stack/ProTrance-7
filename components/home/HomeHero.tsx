@@ -11,7 +11,7 @@ import {
 } from "framer-motion";
 import { StaggerText } from "@/components/motion/StaggerText";
 import { useReducedMotion } from "@/components/motion/useReducedMotion";
-import { pace, story, type Pace } from "@/lib/pace";
+import { pace, story, STORY_LENGTH, type Pace } from "@/lib/pace";
 import { probeGpuOffThread, SOFTWARE_GPU } from "@/lib/gpu-probe";
 
 const ease = [0.22, 1, 0.36, 1] as const;
@@ -123,13 +123,13 @@ const chapters = [
 ];
 
 /** Where the badge, CTAs and cards come in: the final beat, as the truck
-    finishes reversing into the bay and its rear doors swing open (0.96 in
+    is unloaded and its rear doors have swung shut again (DOORS_SHUT in
     HeroScene). Until then the story has the screen to itself. They go again
     at the same point on the way back, read off the same eased progress the
     scene uses, so they stay in step with it rather than with the raw
     scroll. Opacity and transform only — every element keeps its box. */
-const UI_AT = 0.96;
-const UI_OUT_AT = 0.955;
+const UI_AT = 0.9995;
+const UI_OUT_AT = 0.997;
 /** Reveal stagger, top to bottom. Hiding runs together and quicker. */
 const uiTransition = (show: boolean, at: number, duration: number) => ({
   duration: show ? duration : 0.35,
@@ -423,7 +423,8 @@ export function HomeHero() {
         start: "top top",
         end: "bottom bottom",
         onUpdate: (self) => {
-          const p = Math.min(1, self.progress / STORY_END);
+          // In story() units: see STORY_LENGTH in lib/pace.
+          const p = Math.min(1, self.progress / STORY_END) * STORY_LENGTH;
           progress.current = p;
           scroll.set(p);
         },
@@ -493,7 +494,7 @@ export function HomeHero() {
       // to 0.94, and whatever sits behind it becomes a visible frame on all
       // four sides. Against #fffcfc that frame reads as a white gap tearing
       // open down the edges; against ink it reads as the panel insetting.
-      className="relative bg-ink h-[620svh] lg:h-[max(770vh,6600px)]"
+      className="relative bg-ink h-[731svh] lg:h-[max(913vh,7860px)]"
     >
       {/* The pinned panel and the copy column both get their own compositor
           layer. Without it every scroll tick repaints a full-viewport stack
