@@ -132,7 +132,8 @@ async function sceneRun(viewport, label) {
   check(s.ground.length === 0, `${label}: wheels stay on the ground${s.ground.length ? " — " + s.ground.join("; ") : ""}`);
 
   // At rest in each stage, both directions.
-  for (const p of [0.3, 0.63, 0.75, 0.95, 0.75, 0.63, 0.3]) {
+  // Scroll shares, one inside each stage (lib/pace story()).
+  for (const p of [0.2, 0.49, 0.68, 0.9, 0.68, 0.49, 0.2]) {
     await scrollTo(page, p);
     await page.waitForTimeout(3500);
     const d = await domState(page);

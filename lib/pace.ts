@@ -13,11 +13,12 @@ const FOLLOW = 4;
 /** 1/s. How quickly the speed itself changes. 4 × FOLLOW is critical
     damping — the fastest settle that never overshoots and runs backwards. */
 const ACCEL = 4 * FOLLOW;
-/** Progress per second, at most: ~4.5s for the whole story on a hard fling.
-    0.35 (~2.9s) still read as rushing through the beats, so this is paired
-    with a longer scroll runway in HomeHero. The chapter copy steps one beat
-    at a time on its own (see HomeHero), so no beat is skipped either way. */
-const MAX_RATE = 0.22;
+/** Scroll share per second, at most (in the units story() takes, not scene
+    progress): ~6.7s for the whole story on a hard fling, and since every
+    stage now owns a fair share of that scroll, no stage plays in under
+    ~1.2s. It was 0.22 in scene progress, which let the 0.087-wide "In
+    transit" stage go by in 0.4s of a normal scroll. */
+const MAX_RATE = 0.15;
 
 export type Pace = { value: number; rate: number };
 
@@ -35,4 +36,47 @@ export function pace(s: Pace, target: number, delta: number): boolean {
   s.rate += (want - s.rate) * (1 - Math.exp(-ACCEL * dt));
   s.value += s.rate * dt;
   return true;
+}
+
+/* ── Scroll share per stage ─────────────────────────────────────────────
+   The scene's timeline is front-loaded: loading at the dock runs to 0.583,
+   then "In transit" is 0.087 wide, the coastal run 0.15 and the yard 0.18
+   (STAGE_AT in HomeHero). Mapped linearly, the later stages got three to six
+   wheel notches each and a normal scroll ran through three of them at once.
+   story() gives each stage its own share of the scroll instead, and the
+   scroll rate eases from one stage's into the next across BLEND, so the truck
+   never visibly lurches at a boundary. Applied after pace(), so the speed
+   limit is per share of scroll too. */
+const STAGE_P = [0, 0.583, 0.67, 0.82, 1];
+const STAGE_SHARE = [0.4, 0.18, 0.2, 0.22];
+const BLEND = 0.04;
+const N = 1024;
+
+const P_OF_U = (() => {
+  const step = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
+  // Scroll per unit of progress, stage by stage.
+  const dens = STAGE_SHARE.map((s, k) => s / (STAGE_P[k + 1] - STAGE_P[k]));
+  const d = (p: number) => {
+    let v = dens[0];
+    for (let k = 1; k < dens.length; k++) v += (dens[k] - dens[k - 1]) * step((p - STAGE_P[k]) / BLEND + 0.5);
+    return v;
+  };
+  // Scroll as a function of progress, integrated, then inverted onto a
+  // uniform scroll grid.
+  const u = new Float64Array(N + 1);
+  for (let i = 1; i <= N; i++) u[i] = u[i - 1] + (d((i - 1) / N) + d(i / N)) / (2 * N);
+  const out = new Float32Array(N + 1);
+  for (let i = 0, j = 0; i <= N; i++) {
+    const want = (i / N) * u[N];
+    while (j < N - 1 && u[j + 1] < want) j++;
+    out[i] = (j + (want - u[j]) / (u[j + 1] - u[j])) / N;
+  }
+  return out;
+})();
+
+/** Scroll share (0–1, already paced) to scene progress (0–1). */
+export function story(share: number): number {
+  const x = Math.min(1, Math.max(0, share)) * N;
+  const i = Math.min(N - 1, Math.floor(x));
+  return P_OF_U[i] + (P_OF_U[i + 1] - P_OF_U[i]) * (x - i);
 }

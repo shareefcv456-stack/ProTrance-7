@@ -37,7 +37,7 @@ function useEffectsChunk(enabled: boolean) {
 }
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
-import { pace, type Pace } from "@/lib/pace";
+import { pace, story, type Pace } from "@/lib/pace";
 import { SOFTWARE_GPU } from "@/lib/gpu-probe";
 
 /* ── Scroll-driven 3D hero ───────────────────────────────────────────────
@@ -5503,7 +5503,7 @@ function Rig({
 
   useFrame(({ camera, scene, clock, gl }, delta) => {
     pace(paced.current, clamp01(progress.current), delta);
-    eased.current = paced.current.value;
+    eased.current = story(paced.current.value);
     const p = eased.current;
     // Read by scripts/hero-regression.mjs to know which beat a frame is on.
     scene.userData.progress = p;

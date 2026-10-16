@@ -11,7 +11,7 @@ import {
 } from "framer-motion";
 import { StaggerText } from "@/components/motion/StaggerText";
 import { useReducedMotion } from "@/components/motion/useReducedMotion";
-import { pace, type Pace } from "@/lib/pace";
+import { pace, story, type Pace } from "@/lib/pace";
 import { probeGpuOffThread, SOFTWARE_GPU } from "@/lib/gpu-probe";
 
 const ease = [0.22, 1, 0.36, 1] as const;
@@ -137,8 +137,8 @@ const uiTransition = (show: boolean, at: number, duration: number) => ({
   ease,
 });
 
-/** Chapter copy swap. Short enough that the shortest chapter (02, ~0.43s at
-    the pace cap) still lands fully opaque, so the copy is never caught
+/** Chapter copy swap. Short enough that the shortest chapter (~1.2s at the
+    pace cap) still lands fully opaque, so the copy is never caught
     mid-fade when the scroll comes to rest. */
 const COPY_OUT = 0.16;
 const COPY_IN_S = 0.3;
@@ -240,11 +240,13 @@ const chips = [
 export function HomeHero() {
   const reduce = useReducedMotion();
   const scene = useRef<HTMLElement>(null);
-  // Runway: 460svh on touch, where a swipe travels about a screen's worth
+  // Runway: 620svh on touch, where a swipe travels about a screen's worth
   // so the runway should scale with the screen. On desktop a wheel notch is
   // a fixed ~100px whatever the screen, so a short laptop needs a pixel floor
   // or it gets half the notches per chapter a tall monitor does. Paired with
-  // the pace cap in lib/pace; the sticky panel pins for all of it.
+  // the pace cap in lib/pace; the sticky panel pins for all of it. Sized so
+  // the dock stage keeps the ~20 wheel notches it had before story() gave
+  // the later stages their own shares (~9–11 notches each, up from 3–6).
   const progress = useRef(0);
   // Touch scrolling covers far less document per gesture than a wheel, so a
   // phone needs its own runway or the whole eight-beat story flies past in
@@ -263,7 +265,7 @@ export function HomeHero() {
   const paced = useRef<Pace>({ value: 0, rate: 0 });
   useAnimationFrame((_, delta) => {
     // Returns false once settled, so an idle page does no motion-value work.
-    if (pace(paced.current, scroll.get(), delta / 1000)) eased.set(paced.current.value);
+    if (pace(paced.current, scroll.get(), delta / 1000)) eased.set(story(paced.current.value));
   });
   // The gradient backdrop holds until the canvas has drawn a real frame.
   // Fading on a timer instead meant a slow GPU washed an empty canvas over
@@ -443,8 +445,9 @@ export function HomeHero() {
   // It used to step one chapter at a time, each swap waiting for the last
   // to land. That chain is what put the copy out of step with the scene and
   // left it mid-fade at rest. It is not needed to avoid skipping a beat:
-  // lib/pace caps the story at 0.22/s, so even the shortest chapter is on
-  // screen longer than one swap (COPY_OUT + COPY_IN_S).
+  // lib/pace gives every chapter its own share of the scroll and caps the
+  // rate, so even the shortest is on screen ~1.2s, far longer than one swap
+  // (COPY_OUT + COPY_IN_S).
   const [stage, setStage] = useState(0);
   const stageRef = useRef(0);
   // The word-by-word reveal is the page-load moment only. Replaying it on
@@ -490,7 +493,7 @@ export function HomeHero() {
       // to 0.94, and whatever sits behind it becomes a visible frame on all
       // four sides. Against #fffcfc that frame reads as a white gap tearing
       // open down the edges; against ink it reads as the panel insetting.
-      className="relative bg-ink h-[460svh] lg:h-[max(560vh,4800px)]"
+      className="relative bg-ink h-[620svh] lg:h-[max(770vh,6600px)]"
     >
       {/* The pinned panel and the copy column both get their own compositor
           layer. Without it every scroll tick repaints a full-viewport stack
