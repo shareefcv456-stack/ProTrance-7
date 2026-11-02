@@ -27,6 +27,10 @@ export function Reveal({
 }: RevealProps) {
   const reduce = useReducedMotion();
   const MotionTag = m[as];
+  // viewport is observer config, not markup, so reading it during render
+  // cannot cause a hydration mismatch.
+  const mobile =
+    typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches;
 
   if (reduce) {
     const Tag = as;
@@ -38,7 +42,9 @@ export function Reveal({
       className={className}
       initial={{ opacity: 0, y }}
       whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once, margin: "-12% 0px -12% 0px" }}
+      // -12% of a phone viewport holds content invisible across its bottom
+      // ~100px, which reads as blank space mid-scroll; trigger sooner below sm.
+      viewport={{ once, margin: mobile ? "0px 0px -4% 0px" : "-12% 0px -12% 0px" }}
       transition={{
         duration: 0.75,
         delay,

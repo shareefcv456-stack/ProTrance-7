@@ -11,7 +11,7 @@ import {
 } from "framer-motion";
 import { StaggerText } from "@/components/motion/StaggerText";
 import { useReducedMotion } from "@/components/motion/useReducedMotion";
-import { pace, type Pace } from "@/lib/pace";
+import { pace, story, STORY_LENGTH, type Pace } from "@/lib/pace";
 import { probeGpuOffThread, SOFTWARE_GPU } from "@/lib/gpu-probe";
 
 const ease = [0.22, 1, 0.36, 1] as const;
@@ -123,13 +123,13 @@ const chapters = [
 ];
 
 /** Where the badge, CTAs and cards come in: the final beat, as the truck
-    finishes reversing into the bay and its rear doors swing open (0.96 in
+    is unloaded and its rear doors have swung shut again (DOORS_SHUT in
     HeroScene). Until then the story has the screen to itself. They go again
     at the same point on the way back, read off the same eased progress the
     scene uses, so they stay in step with it rather than with the raw
     scroll. Opacity and transform only — every element keeps its box. */
-const UI_AT = 0.96;
-const UI_OUT_AT = 0.955;
+const UI_AT = 0.9995;
+const UI_OUT_AT = 0.997;
 /** Reveal stagger, top to bottom. Hiding runs together and quicker. */
 const uiTransition = (show: boolean, at: number, duration: number) => ({
   duration: show ? duration : 0.35,
@@ -137,8 +137,8 @@ const uiTransition = (show: boolean, at: number, duration: number) => ({
   ease,
 });
 
-/** Chapter copy swap. Short enough that the shortest chapter (02, ~0.43s at
-    the pace cap) still lands fully opaque, so the copy is never caught
+/** Chapter copy swap. Short enough that the shortest chapter (~1.2s at the
+    pace cap) still lands fully opaque, so the copy is never caught
     mid-fade when the scroll comes to rest. */
 const COPY_OUT = 0.16;
 const COPY_IN_S = 0.3;
@@ -240,11 +240,13 @@ const chips = [
 export function HomeHero() {
   const reduce = useReducedMotion();
   const scene = useRef<HTMLElement>(null);
-  // Runway: 460svh on touch, where a swipe travels about a screen's worth
+  // Runway: 620svh on touch, where a swipe travels about a screen's worth
   // so the runway should scale with the screen. On desktop a wheel notch is
   // a fixed ~100px whatever the screen, so a short laptop needs a pixel floor
   // or it gets half the notches per chapter a tall monitor does. Paired with
-  // the pace cap in lib/pace; the sticky panel pins for all of it.
+  // the pace cap in lib/pace; the sticky panel pins for all of it. Sized so
+  // the dock stage keeps the ~20 wheel notches it had before story() gave
+  // the later stages their own shares (~9–11 notches each, up from 3–6).
   const progress = useRef(0);
   // Touch scrolling covers far less document per gesture than a wheel, so a
   // phone needs its own runway or the whole eight-beat story flies past in
@@ -263,7 +265,7 @@ export function HomeHero() {
   const paced = useRef<Pace>({ value: 0, rate: 0 });
   useAnimationFrame((_, delta) => {
     // Returns false once settled, so an idle page does no motion-value work.
-    if (pace(paced.current, scroll.get(), delta / 1000)) eased.set(paced.current.value);
+    if (pace(paced.current, scroll.get(), delta / 1000)) eased.set(story(paced.current.value));
   });
   // The gradient backdrop holds until the canvas has drawn a real frame.
   // Fading on a timer instead meant a slow GPU washed an empty canvas over
@@ -421,7 +423,8 @@ export function HomeHero() {
         start: "top top",
         end: "bottom bottom",
         onUpdate: (self) => {
-          const p = Math.min(1, self.progress / STORY_END);
+          // In story() units: see STORY_LENGTH in lib/pace.
+          const p = Math.min(1, self.progress / STORY_END) * STORY_LENGTH;
           progress.current = p;
           scroll.set(p);
         },
@@ -443,8 +446,9 @@ export function HomeHero() {
   // It used to step one chapter at a time, each swap waiting for the last
   // to land. That chain is what put the copy out of step with the scene and
   // left it mid-fade at rest. It is not needed to avoid skipping a beat:
-  // lib/pace caps the story at 0.22/s, so even the shortest chapter is on
-  // screen longer than one swap (COPY_OUT + COPY_IN_S).
+  // lib/pace gives every chapter its own share of the scroll and caps the
+  // rate, so even the shortest is on screen ~1.2s, far longer than one swap
+  // (COPY_OUT + COPY_IN_S).
   const [stage, setStage] = useState(0);
   const stageRef = useRef(0);
   // The word-by-word reveal is the page-load moment only. Replaying it on
@@ -490,7 +494,7 @@ export function HomeHero() {
       // to 0.94, and whatever sits behind it becomes a visible frame on all
       // four sides. Against #fffcfc that frame reads as a white gap tearing
       // open down the edges; against ink it reads as the panel insetting.
-      className="relative bg-ink h-[460svh] lg:h-[max(560vh,4800px)]"
+      className="relative bg-ink h-[731svh] lg:h-[max(913vh,7860px)]"
     >
       {/* The pinned panel and the copy column both get their own compositor
           layer. Without it every scroll tick repaints a full-viewport stack
@@ -656,7 +660,9 @@ export function HomeHero() {
                   the outgoing copy stays selectable and searchable while it
                   is invisible. AnimatePresence mode="wait" holds the incoming
                   until the outgoing has gone, so they never overlap. */}
-              <div className="min-h-[230px] sm:min-h-[290px] lg:min-h-[320px] squat:min-h-0 short:min-h-0">
+              {/* pr-6 below sm clears the chapter rail pinned top-right, which
+                  otherwise runs through the headline at 320px. */}
+              <div className="min-h-[230px] pr-6 sm:pr-0 sm:min-h-[290px] lg:min-h-[320px] squat:min-h-0 short:min-h-0">
                 <AnimatePresence mode="wait" initial={false}>
                   <m.div
                     key={stage}

@@ -23,7 +23,7 @@ export function FleetBand({
   stats: Stat[];
 }) {
   return (
-    <section className="relative isolate overflow-hidden bg-[#131313] py-28 sm:py-36">
+    <section className="relative isolate overflow-hidden bg-[#131313] py-20 sm:py-36">
       {/* background image */}
       <Image
         src={image.src}
@@ -49,7 +49,7 @@ export function FleetBand({
         </Reveal>
 
         <Reveal delay={0.16}>
-          <dl className="mt-12 grid max-w-2xl grid-cols-2 gap-8 border-t border-paper/15 pt-8 sm:grid-cols-4">
+          <dl className="mt-10 grid max-w-2xl sm:mt-12 grid-cols-2 gap-8 border-t border-paper/15 pt-8 sm:grid-cols-4">
             {stats.map((s) => (
               <div key={s.l}>
                 <dt className="font-display text-2xl font-800 tracking-tight text-paper sm:text-3xl">

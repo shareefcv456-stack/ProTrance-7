@@ -9,7 +9,7 @@ const nestoLogos = Array.from({ length: 8 });
 /** Esteemed clientele — trust anchors rendered as capability cards. */
 export function ClientsStrip() {
   return (
-    <section className="relative bg-paper py-24 sm:py-32">
+    <section className="relative bg-paper py-16 sm:py-32">
       <div className="shell">
         <SectionHeading
           theme="light"
@@ -26,7 +26,7 @@ export function ClientsStrip() {
 
       {/* Full-bleed auto-scrolling partner logo wall (right → left).
           The strip pauses on hover; each tile lifts and highlights on hover. */}
-      <div className="relative mt-14 sm:mt-16">
+      <div className="relative mt-10 sm:mt-16">
         {/* edge fades for a premium, un-clipped feel */}
         <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-16 bg-gradient-to-r from-paper to-transparent sm:w-40" />
         <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-16 bg-gradient-to-l from-paper to-transparent sm:w-40" />
@@ -54,7 +54,7 @@ export function ClientsStrip() {
       </div>
 
       <div className="shell">
-        <div className="mt-16 grid gap-4 md:grid-cols-3">
+        <div className="mt-10 grid gap-4 sm:mt-16 md:grid-cols-3">
           {clients.map((client, i) => (
             <Reveal key={client.name} delay={i * 0.1}>
               <article className="group relative flex h-full flex-col justify-between overflow-hidden rounded-2xl border border-paper-line bg-white/40 p-7 transition-all duration-500 ease-smooth hover:-translate-y-1 hover:border-signal/40">
@@ -69,7 +69,7 @@ export function ClientsStrip() {
                     {client.name}
                   </h3>
                 </div>
-                <p className="relative mt-8 text-sm leading-relaxed text-ink/55">
+                <p className="relative mt-6 text-sm leading-relaxed text-ink/55 sm:mt-8">
                   {client.service}
                 </p>
 

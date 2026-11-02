@@ -3,8 +3,10 @@ import { Reveal } from "@/components/motion/Reveal";
 
 /** Mission and Vision presented as a paired, contrasting light/dark spread. */
 export function MissionVision() {
+  // No top padding below sm: the About story section above is also bg-paper
+  // with its own bottom padding, and the two stacked into a blank band on phones.
   return (
-    <section className="relative bg-paper py-24 sm:py-32">
+    <section className="relative bg-paper pb-16 sm:py-32">
       <div className="shell grid gap-4 md:grid-cols-2">
         {/* Mission — dark card */}
         <Reveal>
