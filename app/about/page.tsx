@@ -30,8 +30,8 @@ export default function AboutPage() {
       />
 
       {/* Story + founders */}
-      <section className="relative bg-paper py-24 sm:py-32">
-        <div className="shell grid gap-14 lg:grid-cols-[1.1fr_0.9fr]">
+      <section className="relative bg-paper py-16 sm:py-32">
+        <div className="shell grid gap-10 sm:gap-14 lg:grid-cols-[1.1fr_0.9fr]">
           <div>
             <SectionHeading
               theme="light"
@@ -131,9 +131,9 @@ export default function AboutPage() {
       />
 
       {/* Fleet spotlight */}
-      <section className="relative overflow-hidden bg-paper py-24 text-ink sm:py-32">
+      <section className="relative overflow-hidden bg-paper py-16 text-ink sm:py-32">
         <div className="shell">
-          <div className="grid items-center gap-14 lg:grid-cols-2">
+          <div className="grid items-center gap-10 sm:gap-14 lg:grid-cols-2">
             <SectionHeading
               theme="light"
               eyebrow="The Fleet"

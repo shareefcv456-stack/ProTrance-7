@@ -5,7 +5,7 @@ import { Reveal } from "@/components/motion/Reveal";
 /** "The Core Four" — company values rendered with a metric per value. */
 export function CoreValues() {
   return (
-    <section className="relative bg-paper py-24 text-ink sm:py-32">
+    <section className="relative bg-paper py-16 text-ink sm:py-32">
       <div className="shell">
         <SectionHeading
           theme="light"
@@ -18,7 +18,7 @@ export function CoreValues() {
           }
         />
 
-        <div className="mt-16 grid gap-4 sm:grid-cols-2">
+        <div className="mt-10 grid gap-4 sm:mt-16 sm:grid-cols-2">
           {coreValues.map((value, i) => (
             <Reveal key={value.title} delay={(i % 2) * 0.1} className="min-w-0">
               <article className="group relative flex h-full items-start gap-5 overflow-hidden rounded-2xl border border-paper-line bg-white/50 p-6 sm:gap-6 sm:p-8 transition-all duration-500 ease-smooth hover:-translate-y-1 hover:border-signal-deep/40 hover:shadow-[0_24px_60px_-30px_rgba(15,22,19,0.35)]">

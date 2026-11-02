@@ -7,7 +7,7 @@ import { Reveal } from "@/components/motion/Reveal";
 /** Closing conversion band with the tagline and primary contact routes. */
 export function CtaBand() {
   return (
-    <section className="relative isolate overflow-hidden bg-paper py-24 sm:py-32">
+    <section className="relative isolate overflow-hidden bg-paper py-16 sm:py-32">
       <Image
         src={images.roadForest.src}
         alt={images.roadForest.alt}
@@ -20,7 +20,7 @@ export function CtaBand() {
       <div className="pointer-events-none absolute left-1/2 top-0 h-72 w-[42rem] -translate-x-1/2 rounded-full bg-signal/10 blur-[130px]" />
 
       <div className="shell relative">
-        <div className="relative overflow-hidden rounded-3xl border border-paper-line bg-white/50 px-8 py-16 text-center sm:px-16 sm:py-20">
+        <div className="relative overflow-hidden rounded-3xl border border-paper-line bg-white/50 px-8 py-12 text-center sm:px-16 sm:py-20">
           {/* hazard corner accents */}
           <div className="hazard absolute left-0 top-0 h-1.5 w-full opacity-80" />
 

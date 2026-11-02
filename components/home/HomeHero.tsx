@@ -660,7 +660,9 @@ export function HomeHero() {
                   the outgoing copy stays selectable and searchable while it
                   is invisible. AnimatePresence mode="wait" holds the incoming
                   until the outgoing has gone, so they never overlap. */}
-              <div className="min-h-[230px] sm:min-h-[290px] lg:min-h-[320px] squat:min-h-0 short:min-h-0">
+              {/* pr-6 below sm clears the chapter rail pinned top-right, which
+                  otherwise runs through the headline at 320px. */}
+              <div className="min-h-[230px] pr-6 sm:pr-0 sm:min-h-[290px] lg:min-h-[320px] squat:min-h-0 short:min-h-0">
                 <AnimatePresence mode="wait" initial={false}>
                   <m.div
                     key={stage}

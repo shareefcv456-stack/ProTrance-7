@@ -1,7 +1,7 @@
 import Link from "next/link";
-import Image from "next/image";
 import { services } from "@/lib/site";
 import { Reveal } from "@/components/motion/Reveal";
+import { FadeInImage } from "@/components/motion/FadeInImage";
 
 type Group = {
   index: string;
@@ -114,10 +114,14 @@ export function ServiceRows() {
                       <div
                         className={`absolute ${group.cutout.fit ?? "inset-0"}`}
                       >
-                        <Image
+                        <FadeInImage
                           src={group.cutout.src}
                           alt={group.cutout.alt}
                           fill
+                          // Eager so the cutout is decoded before its card
+                          // reveals; mobile Safari's lazy threshold fetched it
+                          // only once it was nearly on screen.
+                          loading="eager"
                           // Measured: ~355px wide from xl up, where 30vw asked for up to 2x that.
                           sizes="(min-width: 1280px) 360px, (min-width: 1024px) 30vw, (min-width: 640px) 45vw, 90vw"
                           className={`drop-shadow-[0_24px_30px_rgba(0,0,0,0.45)] ${
