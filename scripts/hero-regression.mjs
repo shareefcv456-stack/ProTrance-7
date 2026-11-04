@@ -7,7 +7,8 @@
 //   1. load: poster first, video autoplays muted inline, one download,
 //      18s at 1280×720, no errors, no overflow or layout shift at any width;
 //   2. playback: crosses the 9s join into the second clip and ends on the
-//      final frame; the chapter marker follows the playback time;
+//      final frame; no chapter rail, one fixed headline; the sound toggle
+//      unmutes/mutes and replays a finished video with sound;
 //   3. scroll: scrolling never pauses, seeks or reverses the video;
 //   4. fallbacks: blocked autoplay and reduced motion show a play button
 //      that works; a failed video keeps the poster.
@@ -17,9 +18,6 @@ const URL = process.env.HERO_URL ?? "http://localhost:3000";
 const CHROME =
   process.env.CHROME_PATH ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 // Mirror components/home/HomeHero.tsx.
-const FPS = 24;
-const STAGE_AT = [0, 287 / FPS, 383 / FPS, 418 / FPS];
-const stageOf = (t) => STAGE_AT.filter((s) => t >= s).length - 1;
 
 const failures = [];
 const check = (ok, msg) => {
@@ -55,7 +53,10 @@ const state = (page) =>
       muted: v.muted,
       inline: v.hasAttribute("playsinline"),
       shown: +getComputedStyle(v).opacity,
-      marker: h1.previousElementSibling ? +h1.previousElementSibling.textContent.slice(0, 2) - 1 : -1,
+      // Each line once: StaggerText adds an sr-only copy beside its words.
+      headline: [...h1.children].map((l) => (l.querySelector(".sr-only") ?? l).textContent.trim()).join(" "),
+      chapters: /\b0[1-4]\b/.test(s.innerText),
+      sound: s.querySelector('button[aria-pressed]')?.getAttribute("aria-label") ?? null,
       button: !!s.querySelector('button[aria-label="Play hero video"]'),
       cta: +getComputedStyle(s.querySelector('a[href="/contact"]').parentElement).opacity,
     };
@@ -110,15 +111,28 @@ async function autoplayRun(viewport, label) {
   await page.waitForFunction(() => document.querySelector("section video").currentTime > 9.4, null, { timeout: 5000 }).catch(() => {});
   s = await state(page);
   check(s.t > 9.4 && !s.paused && s.shown > 0.99, `${label}: plays across the 9s join into the second clip (t=${s.t.toFixed(2)})`);
-  await page.$eval("section video", (v) => (v.currentTime = 16.2));
-  await page.waitForTimeout(1200);
+  check(!s.chapters && s.headline === "Logistics that keep retail moving.", `${label}: no 01–04 chapter rail, fixed headline ("${s.headline}")`);
+
+  // Sound toggle: off by default, on and off again by the visitor's tap.
+  check(s.muted && s.sound === "Turn sound on", `${label}: starts muted with a sound toggle (${s.sound})`);
+  await page.click("section button[aria-pressed]");
+  await page.waitForTimeout(300);
   s = await state(page);
-  check(s.marker === stageOf(s.t), `${label}: chapter marker follows playback (t=${s.t.toFixed(2)}, chapter ${s.marker + 1})`);
+  check(!s.muted && !s.paused && s.sound === "Turn sound off", `${label}: toggle turns sound on, keeps playing (muted ${s.muted})`);
+  await page.click("section button[aria-pressed]");
+  await page.waitForTimeout(300);
+  s = await state(page);
+  check(s.muted && !s.paused && s.sound === "Turn sound on", `${label}: toggle turns sound off again (muted ${s.muted})`);
+
+  await page.$eval("section video", (v) => (v.currentTime = 16.2));
   await page.waitForFunction(() => document.querySelector("section video").ended, null, { timeout: 5000 }).catch(() => {});
   await page.waitForTimeout(600);
   s = await state(page);
   check(s.ended && s.paused && s.t > 17.9 && s.shown > 0.99, `${label}: ends and holds the final frame (t=${s.t.toFixed(2)})`);
-  check(s.marker === 3, `${label}: ends on chapter 04 (${s.marker + 1})`);
+  await page.click("section button[aria-pressed]");
+  await page.waitForTimeout(600);
+  s = await state(page);
+  check(!s.muted && !s.paused && s.t < 2, `${label}: sound on after the end replays from the start with sound (t=${s.t.toFixed(2)})`);
 
   check(videoRequests() >= 1 && (await page.evaluate(() => performance.getEntriesByType("resource").filter((e) => e.name.includes("pro-hero.mp4")).length)) <= 1, `${label}: video fetched by one element only`);
   const cls = await page.evaluate(() => window.__cls);

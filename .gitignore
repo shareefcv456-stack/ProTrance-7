@@ -16,3 +16,8 @@ dist
 # Assets moved out of public/ during the performance pass. Nothing in the app
 # references them; delete the folder once you have confirmed that.
 _unused-assets/
+
+# Secrets — never commit
+.env
+.env.*
+!.env.example

@@ -2,115 +2,33 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { AnimatePresence, m } from "framer-motion";
+import { m } from "framer-motion";
 import { StaggerText } from "@/components/motion/StaggerText";
 import { useReducedMotion } from "@/components/motion/useReducedMotion";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
 /* ── Hero video ──────────────────────────────────────────────────────────
-   Plain muted autoplay, played once; the scroll has no hold on it. Encoded
-   from two sources in _unused-assets (both 1280×720, 24fps, H.264, full-
-   range yuvj420p): the first 9s (216 frames) of pro7_gwr_video_mvp.mp4,
-   then the first 9s of pro6_gwr_video_mvp.mp4, joined into one 18s,
-   432-frame file — the join is just the next frame, so it cannot flash or
-   wait on a second download. Full source resolution, converted to
-   limited-range BT.709 (what browsers expect), x264 CRF 16, no audio,
-   faststart. Poster is frame 0 of the encoded file. */
+   Muted autoplay, played once (no loop — it ends and holds the last frame);
+   the scroll has no hold on it. One 18s, 432-frame 1280×720 H.264 file: the
+   first 9s of _unused-assets/pro7_gwr_video_mvp.mp4, then the first 9s of
+   pro6_gwr_video_mvp.mp4, with their soundtrack (AAC stereo) for the sound
+   toggle. One file, so the join cannot flash or wait on a second download.
+   Poster is frame 0 of the same file. */
 const VIDEO_SRC = "/videos/pro-hero.mp4";
 const POSTER_SRC = "/videos/pro-hero-poster.webp";
-const FPS = 24;
-
-/** Where each stage starts, in seconds of the video: the shot cuts, found by
-    ffmpeg scene detection. pro7 (0–215): containers loaded onto the truck at
-    the port. pro6 (216–431): warehouse dock (216), pulling out (252),
-    highway (287), wheel close-up (335), quay along the sea (383), aerial
-    over the container yard (418). Re-cut either clip and these move. */
-const STAGE_AT = [0, 287 / FPS, 383 / FPS, 418 / FPS];
 
 /** Landscape footage. Cover where the screen is close to its shape; on a
     portrait screen cover would crop ~75% of the width and lose the truck and
     the PRO TRANS logo, so the whole frame is shown full-width instead. */
 const FIT = "object-contain [@media(min-aspect-ratio:4/3)]:object-cover";
 
-const chapters = [
-  {
-    label: "Warehouse",
-    sub: "Crates loading at the dock",
-    title: ["Logistics that keep", "retail moving."],
-    body: "FMCG freight across South India with Pan-India reach. Cold-chain ready and GPS-tracked throughout.",
-  },
-  {
-    label: "In Transit",
-    sub: "Pan-India line haul",
-    title: ["Sealed at the dock.", "Tracked to the door."],
-    body: "Line haul across the national corridors, every handover logged against the docket.",
-  },
-  {
-    label: "Coastal run",
-    sub: "Coastal corridor, NH-66",
-    title: ["Cold chain that holds", "the whole way."],
-    body: "Thermo King units at 2–8°C down NH-66, temperature logged end to end, not just at the gate.",
-  },
-  {
-    label: "Yard arrival",
-    sub: "Delivered, on time",
-    title: ["Backed onto the quay,", "on schedule."],
-    body: "Reversed into the bay, doors open, paperwork signed. On-time delivery across India.",
-  },
-];
+const headline = ["Logistics that keep", "retail moving."];
+const intro =
+  "FMCG freight across South India with Pan-India reach. Cold-chain ready and GPS-tracked throughout.";
 
 /** Page-load reveal stagger, top to bottom. */
 const uiTransition = (at: number, duration: number) => ({ duration, delay: at, ease });
-
-/** Chapter copy swap. */
-const COPY_OUT = 0.16;
-const COPY_IN_S = 0.3;
-
-/** Which stage a video time is in. */
-const stageAt = (t: number) => STAGE_AT.filter((s) => t >= s).length - 1;
-
-/** Chapter index in the corner — all four always visible, the active one lit.
-    Driven by the same `stage` as the headline, so the two cannot disagree. */
-function ChapterTick({ index, active }: { index: number; active: boolean }) {
-  const t = { duration: 0.35, ease };
-  return (
-    <div className="flex h-8 flex-col items-end justify-start sm:h-9">
-      <m.div
-        initial={false}
-        animate={{ opacity: active ? 1 : 0.3 }}
-        transition={t}
-        className="flex items-center gap-2 sm:gap-3"
-      >
-        {/* Numbers only on a phone. The stacked layout puts the headline
-            directly under this column, and the full labels ran across it —
-            and the active stage's name is already spelled out at the top of
-            the copy, so the ticks lose nothing by being just the index. */}
-        <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-white">
-          <span className="text-accent">{String(index + 1).padStart(2, "0")}</span>
-          <span className="hidden sm:inline"> {chapters[index].label}</span>
-        </span>
-        <m.span
-          initial={false}
-          animate={{ width: active ? 34 : 12 }}
-          transition={t}
-          className="h-px bg-accent"
-        />
-      </m.div>
-      {/* Sub-text belongs to the active stage only, and only where there is
-          room for it — on a phone the column is already the width of the
-          label. The row keeps a fixed height so it never shifts the others. */}
-      <m.span
-        initial={false}
-        animate={{ opacity: active ? 1 : 0, x: active ? 0 : 10 }}
-        transition={t}
-        className="mt-1 hidden text-[10px] leading-none text-white/55 sm:block"
-      >
-        {chapters[index].sub}
-      </m.span>
-    </div>
-  );
-}
 
 /** Trust chips anchored to the hero's bottom-right edge (desktop). */
 const chips = [
@@ -164,30 +82,19 @@ export function HomeHero() {
   // Autoplay refused, or reduced motion: offer a play button instead.
   const [needsTap, setNeedsTap] = useState(false);
 
-  // The shot the video is in, set from its playback time.
-  const [shot, setShot] = useState(0);
-  const stageRef = useRef(0);
-  // Which chapter is showing — the one value the index ticks, the stage
-  // marker, the headline and the paragraph all read. It follows `shot`, at
-  // most one swap per swap animation, so AnimatePresence mode="wait" never
-  // drops a key.
-  const [stage, setStage] = useState(0);
-  const lastSwap = useRef(0);
-  // The word-by-word reveal is the page-load moment only.
-  const intro = useRef(true);
-  useEffect(() => {
-    if (stage === shot) return;
-    const swapMs = (COPY_OUT + COPY_IN_S) * 1000 + 50;
-    const id = window.setTimeout(
-      () => {
-        lastSwap.current = performance.now();
-        intro.current = false;
-        setStage(shot);
-      },
-      Math.max(0, lastSwap.current + swapMs - performance.now()),
-    );
-    return () => window.clearTimeout(id);
-  }, [shot, stage]);
+  // Starts muted (the only way browsers allow autoplay); the toggle is the
+  // visitor's own gesture, which is what lets audio start.
+  const [muted, setMuted] = useState(true);
+  const toggleSound = () => {
+    const el = video.current;
+    if (!el) return;
+    el.muted = !el.muted;
+    setMuted(el.muted);
+    // Turning sound on after the video has finished replays it from the
+    // start — otherwise the button would appear to do nothing.
+    if (!el.muted && el.ended) el.currentTime = 0;
+    if (!el.muted && el.paused) el.play().catch(() => {});
+  };
 
   useEffect(() => {
     const el = video.current;
@@ -195,30 +102,19 @@ export function HomeHero() {
     // The property, not only the attribute: React does not reliably render
     // `muted`, and iOS Safari only autoplays a video that is muted.
     el.muted = true;
-    const onTime = () => {
-      const next = stageAt(el.currentTime);
-      if (next !== stageRef.current) {
-        stageRef.current = next;
-        setShot(next);
-      }
-    };
     const onPlaying = () => {
       setReady(true);
       setNeedsTap(false);
     };
-    el.addEventListener("timeupdate", onTime);
     el.addEventListener("playing", onPlaying);
     // The query as well as `reduce`: the hook reports false for one commit
     // to keep hydration quiet, and nothing should start moving in it.
     if (reduce || matchMedia("(prefers-reduced-motion: reduce)").matches) setNeedsTap(true);
     else el.play().catch(() => setNeedsTap(true));
     return () => {
-      el.removeEventListener("timeupdate", onTime);
       el.removeEventListener("playing", onPlaying);
     };
   }, [reduce]);
-
-  const copy = reduce ? chapters[0] : chapters[stage];
 
   return (
     <section className="relative bg-ink">
@@ -245,8 +141,7 @@ export function HomeHero() {
                 className={`absolute inset-0 h-full w-full ${FIT}`}
               />
               {/* preload="none": play() starts the download, so reduced
-                  motion never fetches 9.6MB it will not show. Played once;
-                  it holds its last frame. */}
+                  motion never fetches 11MB it will not show. */}
               <video
                 ref={video}
                 src={VIDEO_SRC}
@@ -274,19 +169,21 @@ export function HomeHero() {
               </button>
             )}
 
-            {/* Chapter index.
-
-                Cleared below the fixed navbar at every width. The bar is 16px
-                from the top and 64px tall above sm, so `sm:top-6` (24px) ran
-                the "01 Warehouse" and "02 In Transit" rows straight through
-                the back of it — visible in any screenshot of the desktop
-                hero. 5.5rem clears the 80px with room to breathe. */}
-            {!reduce && (
-              <div className="absolute right-4 top-[4.6rem] z-10 flex flex-col items-end gap-1 sm:right-6 sm:top-[5.5rem]">
-                {chapters.map((c, i) => (
-                  <ChapterTick key={c.label} index={i} active={i === stage} />
-                ))}
-              </div>
+            {/* Sound toggle, top right under the navbar. Only once the video
+                is playing — before that there is nothing to hear. */}
+            {ready && (
+              <button
+                type="button"
+                onClick={toggleSound}
+                aria-label={muted ? "Turn sound on" : "Turn sound off"}
+                aria-pressed={!muted}
+                className="absolute right-4 top-[4.6rem] z-30 flex h-10 w-10 items-center justify-center rounded-full border border-white/30 bg-ink/50 text-white backdrop-blur-sm transition-colors duration-300 hover:bg-accent hover:text-ink sm:right-6 sm:top-[5.5rem]"
+              >
+                <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M11 5 6 9H3v6h3l5 4V5Z" />
+                  {muted ? <path d="m16 9 5 6m0-6-5 6" /> : <path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" />}
+                </svg>
+              </button>
             )}
 
             {/* Legibility scrim — the copy column sits at full opacity on top
@@ -308,65 +205,22 @@ export function HomeHero() {
                 absolutely-positioned canvas by DOM order — but it states the
                 intent, and it keeps the CTAs above anything added later. */}
             <div className="relative z-20 transform-gpu flex h-svh flex-col p-7 pb-8 pt-20 sm:p-12 sm:pb-10 sm:pt-32 lg:p-16 lg:pb-12 lg:pt-32 squat:pb-5 squat:pt-[4.5rem] short:pb-6 short:pt-24">
-              {/* Stage marker, headline and paragraph, all keyed to the same
-                  stage so they change together.
-
-                  One h1 and one p in the DOM at a time, with the text swapped
-                  rather than four copies stacked and faded: four h1 elements
-                  is four headings for a screen reader to walk through, and
-                  the outgoing copy stays selectable and searchable while it
-                  is invisible. AnimatePresence mode="wait" holds the incoming
-                  until the outgoing has gone, so they never overlap. */}
-              {/* pr-6 below sm clears the chapter rail pinned top-right, which
-                  otherwise runs through the headline at 320px. */}
-              <div className="min-h-[230px] pr-6 sm:pr-0 sm:min-h-[290px] lg:min-h-[320px] squat:min-h-0 short:min-h-0">
-                <AnimatePresence mode="wait" initial={false}>
-                  <m.div
-                    key={stage}
-                    initial={reduce ? false : { opacity: 0, y: 12 }}
-                    animate={{ opacity: 1, y: 0, transition: { duration: COPY_IN_S, ease } }}
-                    exit={
-                      reduce
-                        ? undefined
-                        : { opacity: 0, y: -8, transition: { duration: COPY_OUT, ease: "easeIn" } }
-                    }
-                  >
-                    {!reduce && (
-                      <span
-                        className="mb-5 squat:mb-3 short:mb-3 block font-mono text-[11px] uppercase tracking-[0.18em] text-accent"
-                        aria-hidden="true"
-                      >
-                        {String(stage + 1).padStart(2, "0")} — {copy.label}
-                      </span>
-                    )}
-                    {/* Two blocks, so the break is a decision rather than a
-                        wrap that happens to land there at one width. The
-                        clamp floor is set so the longest first line still
-                        fits a 360px screen inside the column padding. */}
-                    {/* 720px and a 4rem cap, because the longest first line
-                        is 21 characters: at the old 4.3rem cap that measured
-                        ~679px against a 640px column and broke to a third
-                        line on three of the four headings. */}
-                    <h1 className="max-w-[720px] font-display text-[clamp(1.75rem,5.4vw,4rem)] squat:text-[1.6rem] short:text-[clamp(1.75rem,min(5.4vw,7.5vh),4rem)] font-600 leading-[1.04] tracking-tighter text-white">
-                      {copy.title.map((line, i) => (
-                        <span key={line} className="block">
-                          {stage === 0 && intro.current && !reduce ? (
-                            <StaggerText text={line} delay={0.1 + i * 0.18} />
-                          ) : (
-                            line
-                          )}
-                        </span>
-                      ))}
-                    </h1>
-                    {/* text-pretty keeps the last line from breaking to a
-                        single orphaned word. */}
-                    <p className="mt-5 max-w-[480px] text-pretty text-base leading-relaxed text-white/80 sm:text-lg squat:mt-3 squat:text-[15px] short:mt-3 short:text-base">
-                      {copy.body}
-                    </p>
-                  </m.div>
-                </AnimatePresence>
+              <div className="min-h-[230px] sm:min-h-[290px] lg:min-h-[320px] squat:min-h-0 short:min-h-0">
+                {/* Two blocks, so the break is a decision rather than a wrap
+                    that happens to land there at one width. */}
+                <h1 className="max-w-[720px] font-display text-[clamp(1.75rem,5.4vw,4rem)] squat:text-[1.6rem] short:text-[clamp(1.75rem,min(5.4vw,7.5vh),4rem)] font-600 leading-[1.04] tracking-tighter text-white">
+                  {headline.map((line, i) => (
+                    <span key={line} className="block">
+                      {reduce ? line : <StaggerText text={line} delay={0.1 + i * 0.18} />}
+                    </span>
+                  ))}
+                </h1>
+                {/* text-pretty keeps the last line from breaking to a single
+                    orphaned word. */}
+                <p className="mt-5 max-w-[480px] text-pretty text-base leading-relaxed text-white/80 sm:text-lg squat:mt-3 squat:text-[15px] short:mt-3 short:text-base">
+                  {intro}
+                </p>
               </div>
-
 
               {/* Standing claim, not a scroll payoff — it used to fade in
                   with the rear doors at p 0.84, so it never appeared at all
