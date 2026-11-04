@@ -9,14 +9,36 @@ import { useReducedMotion } from "@/components/motion/useReducedMotion";
 const ease = [0.22, 1, 0.36, 1] as const;
 
 /* ── Hero video ──────────────────────────────────────────────────────────
-   Muted autoplay, played once (no loop — it ends and holds the last frame);
-   the scroll has no hold on it. One 18s, 432-frame 1280×720 H.264 file: the
-   first 9s of _unused-assets/pro7_gwr_video_mvp.mp4, then the first 9s of
-   pro6_gwr_video_mvp.mp4, with their soundtrack (AAC stereo) for the sound
-   toggle. One file, so the join cannot flash or wait on a second download.
+   Muted, inline autoplay from 0s, played through once (no loop). The scroll
+   never drives it; visibility only starts and stops it:
+     · on `ended`, if the hero is still on screen, smooth-scroll to the
+       "What we move" section (#what-we-move) — never for reduced motion, and
+       never when the visitor has already scrolled away;
+     · hero back on screen (≥50% visible) → rewind to 0 and play again;
+     · hero off screen → pause, so it cannot end, or decode, out of sight.
+   One 18s, 432-frame 1280×720 H.264 file: the first 9s of
+   _unused-assets/pro7_gwr_video_mvp.mp4, then the first 9s of
+   pro6_gwr_video_mvp.mp4. Always muted — there is no sound control. One
+   file, so the join cannot flash or wait on a second download.
    Poster is frame 0 of the same file. */
 const VIDEO_SRC = "/videos/pro-hero.mp4";
 const POSTER_SRC = "/videos/pro-hero-poster.webp";
+/** Where the hero hands over when the video ends. */
+const NEXT_SECTION_ID = "what-we-move";
+
+/** sm and up: the copy is a left column over the footage. Darkness goes only
+    where copy is — a soft pool behind the headline and intro, a sky fade along
+    the top, a thin left edge, a low band for the CTAs — so the truck in the
+    middle and right stays close to full brightness. Tuned by measuring white
+    text contrast against every second of the video at 1440 and 1280. */
+const SCRIM = [
+  "radial-gradient(ellipse 60% 50% at 20% 26%, rgba(0,0,0,.5), rgba(0,0,0,.25) 50%, transparent)",
+  "linear-gradient(to bottom, rgba(0,0,0,.35), transparent 45%)",
+  "linear-gradient(to right, rgba(0,0,0,.3), transparent 55%)",
+  "linear-gradient(to top, rgba(0,0,0,.55), rgba(0,0,0,.2) 25%, transparent 45%)",
+].join(",");
+/** Lifts white copy off bright sky without darkening the scene around it. */
+const TEXT_SHADOW = "[text-shadow:0_1px_2px_rgba(0,0,0,.25),0_2px_24px_rgba(0,0,0,.35)]";
 
 /** Landscape footage. Cover where the screen is close to its shape; on a
     portrait screen cover would crop ~75% of the width and lose the truck and
@@ -81,24 +103,14 @@ export function HomeHero() {
   const [ready, setReady] = useState(false);
   // Autoplay refused, or reduced motion: offer a play button instead.
   const [needsTap, setNeedsTap] = useState(false);
-
-  // Starts muted (the only way browsers allow autoplay); the toggle is the
-  // visitor's own gesture, which is what lets audio start.
-  const [muted, setMuted] = useState(true);
-  const toggleSound = () => {
-    const el = video.current;
-    if (!el) return;
-    el.muted = !el.muted;
-    setMuted(el.muted);
-    // Turning sound on after the video has finished replays it from the
-    // start — otherwise the button would appear to do nothing.
-    if (!el.muted && el.ended) el.currentTime = 0;
-    if (!el.muted && el.paused) el.play().catch(() => {});
-  };
+  // Whether at least half the hero is on screen; read by onEnded.
+  const heroVisible = useRef(false);
+  const section = useRef<HTMLElement>(null);
 
   useEffect(() => {
     const el = video.current;
-    if (!el) return;
+    const hero = section.current;
+    if (!el || !hero) return;
     // The property, not only the attribute: React does not reliably render
     // `muted`, and iOS Safari only autoplays a video that is muted.
     el.muted = true;
@@ -109,15 +121,48 @@ export function HomeHero() {
     el.addEventListener("playing", onPlaying);
     // The query as well as `reduce`: the hook reports false for one commit
     // to keep hydration quiet, and nothing should start moving in it.
-    if (reduce || matchMedia("(prefers-reduced-motion: reduce)").matches) setNeedsTap(true);
-    else el.play().catch(() => setNeedsTap(true));
+    // Data Saver gets the same: the poster, and 11MB only if asked for.
+    const saveData = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData;
+    const manual = reduce || saveData || matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (manual) setNeedsTap(true);
+
+    // Fires once on observe, which is the initial autoplay; after that, on
+    // every crossing of the 50% line in either direction.
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        const visible = entry.intersectionRatio >= 0.5;
+        if (visible === heroVisible.current) return;
+        heroVisible.current = visible;
+        if (!visible) el.pause();
+        else if (!manual) {
+          el.currentTime = 0;
+          el.play().catch(() => setNeedsTap(true));
+        }
+      },
+      { threshold: 0.5 },
+    );
+    io.observe(hero);
     return () => {
+      io.disconnect();
+      heroVisible.current = false;
       el.removeEventListener("playing", onPlaying);
     };
   }, [reduce]);
 
+  const onEnded = () => {
+    const auto = !(reduce || matchMedia("(prefers-reduced-motion: reduce)").matches);
+    // Scrolled away already (the pause makes this rare, but a fast flick can
+    // land inside the last frame): leave them where they are.
+    if (auto && heroVisible.current) {
+      document.getElementById(NEXT_SECTION_ID)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else {
+      // Not handing over — offer a replay rather than sit on the last frame.
+      setNeedsTap(true);
+    }
+  };
+
   return (
-    <section className="relative bg-ink">
+    <section ref={section} className="relative bg-ink">
       {/* Hero module — inset rounded image panel */}
       <div className="relative">
         {/* h-svh: the height with mobile browser chrome showing, so the
@@ -152,6 +197,7 @@ export function HomeHero() {
                 disableRemotePlayback
                 aria-hidden="true"
                 tabIndex={-1}
+                onEnded={onEnded}
                 className={`absolute inset-0 h-full w-full ${FIT} transition-opacity duration-300 ${ready ? "opacity-100" : "opacity-0"}`}
               />
             </div>
@@ -169,23 +215,6 @@ export function HomeHero() {
               </button>
             )}
 
-            {/* Sound toggle, top right under the navbar. Only once the video
-                is playing — before that there is nothing to hear. */}
-            {ready && (
-              <button
-                type="button"
-                onClick={toggleSound}
-                aria-label={muted ? "Turn sound on" : "Turn sound off"}
-                aria-pressed={!muted}
-                className="absolute right-4 top-[4.6rem] z-30 flex h-10 w-10 items-center justify-center rounded-full border border-white/30 bg-ink/50 text-white backdrop-blur-sm transition-colors duration-300 hover:bg-accent hover:text-ink sm:right-6 sm:top-[5.5rem]"
-              >
-                <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M11 5 6 9H3v6h3l5 4V5Z" />
-                  {muted ? <path d="m16 9 5 6m0-6-5 6" /> : <path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" />}
-                </svg>
-              </button>
-            )}
-
             {/* Legibility scrim — the copy column sits at full opacity on top
                 of it, so nothing in the left column is ever semi-transparent.
 
@@ -196,19 +225,24 @@ export function HomeHero() {
                 darken one flank of the truck and leave the headline sitting
                 on a bright sky; vertical darkens the bands the text is
                 actually in and keeps the middle — where the truck is —
-                nearly clear. */}
-            <div className="absolute inset-0 bg-gradient-to-b from-black/85 via-black/15 to-black/80 sm:bg-gradient-to-r sm:from-black/85 sm:via-black/40 sm:to-transparent" />
-            <div className="absolute inset-x-0 bottom-0 hidden h-40 bg-gradient-to-t from-black/70 to-transparent sm:block" />
+                nearly clear. Below sm the copy sits on the bars above and
+                below the letterboxed footage, so the scrim only needs to
+                soften the footage's edges into them. */}
+            <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-black/60 sm:hidden" />
+            <div className="absolute inset-0 hidden sm:block" style={{ background: SCRIM }} />
 
             {/* Copy */}
             {/* z-20 is belt and braces — the column already paints over the
                 absolutely-positioned canvas by DOM order — but it states the
                 intent, and it keeps the CTAs above anything added later. */}
-            <div className="relative z-20 transform-gpu flex h-svh flex-col p-7 pb-8 pt-20 sm:p-12 sm:pb-10 sm:pt-32 lg:p-16 lg:pb-12 lg:pt-32 squat:pb-5 squat:pt-[4.5rem] short:pb-6 short:pt-24">
+            <div className="relative z-20 transform-gpu flex h-svh flex-col p-7 pb-6 pt-28 sm:p-12 sm:pb-10 sm:pt-40 lg:p-16 lg:pb-12 lg:pt-[10.5rem] squat:pb-5 squat:pt-[5.5rem] short:pb-6 short:pt-32">
               <div className="min-h-[230px] sm:min-h-[290px] lg:min-h-[320px] squat:min-h-0 short:min-h-0">
                 {/* Two blocks, so the break is a decision rather than a wrap
                     that happens to land there at one width. */}
-                <h1 className="max-w-[720px] font-display text-[clamp(1.75rem,5.4vw,4rem)] squat:text-[1.6rem] short:text-[clamp(1.75rem,min(5.4vw,7.5vh),4rem)] font-600 leading-[1.04] tracking-tighter text-white">
+                {/* -ml-[0.07em]: the face's side bearing (4.5px at 64px) set the
+                    ink in from the badge and buttons; em-based, so it holds at
+                    every clamp size. Same for the intro below. */}
+                <h1 className={`-ml-[0.07em] max-w-[720px] font-display text-[clamp(1.75rem,5.4vw,4rem)] squat:text-[1.6rem] short:text-[clamp(1.75rem,min(5.4vw,7.5vh),4rem)] font-600 leading-[1.04] tracking-tighter text-white ${TEXT_SHADOW}`}>
                   {headline.map((line, i) => (
                     <span key={line} className="block">
                       {reduce ? line : <StaggerText text={line} delay={0.1 + i * 0.18} />}
@@ -217,7 +251,7 @@ export function HomeHero() {
                 </h1>
                 {/* text-pretty keeps the last line from breaking to a single
                     orphaned word. */}
-                <p className="mt-5 max-w-[480px] text-pretty text-base leading-relaxed text-white/80 sm:text-lg squat:mt-3 squat:text-[15px] short:mt-3 short:text-base">
+                <p className={`-ml-[0.07em] mt-5 max-w-[480px] text-pretty text-base leading-relaxed text-white/80 sm:text-lg squat:mt-3 squat:text-[15px] short:mt-3 short:text-base ${TEXT_SHADOW}`}>
                   {intro}
                 </p>
               </div>
@@ -226,11 +260,8 @@ export function HomeHero() {
                   with the rear doors at p 0.84, so it never appeared at all
                   on mobile and only briefly on desktop.
 
-                  In the copy flow rather than pinned to a corner: mt-auto
-                  here is what pushes the badge, the buttons and the cards to
-                  the bottom as one group, and self-start keeps the pill at
-                  its content width instead of stretching across the column
-                  the way a flex child otherwise would. */}
+                  self-start keeps the pill at its content width instead of
+                  stretching across the column the way a flex child would. */}
               {/* Reveal order follows the layout, top to bottom: badge, CTAs,
                   cards. Every one of these reserves its space while it is at
                   opacity 0 — that is what keeps the column from jumping — so
@@ -240,11 +271,21 @@ export function HomeHero() {
                   with the badge's slot above them and the cards' below. In
                   document order each item lands directly under one that is
                   already visible. */}
+              {/* Bottom row, pushed down by mt-auto. xl and up: badge + CTAs
+                  on the left, the cards on the right, centred on one line —
+                  the first width where both fit (~560px each side). Below xl
+                  the cards drop under the CTAs, right-aligned as before; below
+                  sm everything stacks. Vertical spacing between the two
+                  groups is gap-y, so it never fights the row's gap-x. */}
+              <div className="mt-auto flex flex-col gap-y-1 sm:gap-y-6 short:gap-y-2 xl:flex-row xl:items-center xl:justify-between xl:gap-x-8">
+              {/* Badge + CTAs: one wrapping row from sm, so a narrow tablet
+                  wraps the buttons under the badge instead of overflowing. */}
+              <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
               <m.div
                 initial={reduce ? undefined : { opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={uiTransition(0, 0.6)}
-                className="mb-4 squat:mb-2 short:mb-3 mt-auto inline-flex self-start items-center gap-2.5 rounded-full bg-paper/95 py-2.5 pl-3 pr-4 shadow-lg"
+                className="mb-4 squat:mb-2 sm:mb-0 inline-flex self-start sm:self-center items-center gap-2.5 rounded-full bg-paper/95 py-2.5 pl-3 pr-4 shadow-lg"
               >
                 <span className="flex h-6 w-6 items-center justify-center rounded-full bg-accent">
                   <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -285,7 +326,7 @@ export function HomeHero() {
                   // 60px band under the buttons. px-4 fits them with room to
                   // spare; grow + basis-auto lets them fill the row evenly and
                   // still wrap, rather than overflow, on anything narrower.
-                  className="group inline-flex grow basis-auto items-center justify-center gap-2.5 whitespace-nowrap rounded-lg bg-accent px-4 py-3.5 text-sm font-semibold text-ink transition-all duration-300 ease-smooth hover:bg-paper active:scale-[0.98] sm:grow-0 sm:px-7"
+                  className="group inline-flex grow basis-auto items-center justify-center gap-2.5 whitespace-nowrap rounded-lg border border-transparent bg-accent px-4 py-3.5 text-sm font-semibold text-ink transition-all duration-300 ease-smooth hover:bg-paper active:scale-[0.98] sm:grow-0 sm:px-7"
                 >
                   Contact us
                   <svg
@@ -311,6 +352,7 @@ export function HomeHero() {
                   Explore services
                 </Link>
               </m.div>
+              </div>
 
               {/* Service cards — one horizontal row pinned under the CTA
                   group, so the canvas centre stays clear of UI. */}
@@ -331,7 +373,7 @@ export function HomeHero() {
               {/* pb-0 below sm and gap-1 rather than gap-1.5: the last 5px
                   of the budget, taken out of dead space instead of out of
                   the type. The column already carries pb-8 underneath. */}
-              <div className="flex flex-col gap-1 pt-1 pb-0 sm:ml-auto sm:grid sm:max-w-[620px] sm:grid-cols-3 sm:gap-4 sm:pb-1 sm:pt-10 short:pt-4">
+              <div className="flex flex-col gap-1 pb-0 sm:ml-auto sm:grid sm:max-w-[620px] sm:grid-cols-3 sm:gap-4 sm:pb-1 xl:min-w-0 xl:flex-1 xl:pb-0">
                 {chips.map((chip, i) => (
                   <m.div
                     key={chip.title}
@@ -368,6 +410,7 @@ export function HomeHero() {
                     </div>
                   </m.div>
                 ))}
+              </div>
               </div>
             </div>
 
