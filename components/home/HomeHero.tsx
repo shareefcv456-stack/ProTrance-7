@@ -1,198 +1,34 @@
 "use client";
 
-import { Component, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import {
-  AnimatePresence,
-  m,
-  useMotionValueEvent,
-  useAnimationFrame,
-  useMotionValue,
-} from "framer-motion";
+import { m } from "framer-motion";
 import { StaggerText } from "@/components/motion/StaggerText";
 import { useReducedMotion } from "@/components/motion/useReducedMotion";
-import { pace, story, STORY_LENGTH, type Pace } from "@/lib/pace";
-import { probeGpuOffThread, SOFTWARE_GPU } from "@/lib/gpu-probe";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
-/** 200 bytes of the first frame, blurred, carried inline in the HTML.
- *
- * The poster below is 38kB and needs its own request: on the 3G profile the
- * round trip put the truck on screen at ~1.25s. This costs no request at
- * all — it arrives with the markup, so it paints as soon as the hero does
- * and the composition (dark dock left, sky right, apron below) is there
- * while the real poster is still in flight. The gradient it sits on is the
- * scene's own sky, so the two agree and the hand-off is a sharpening rather
- * than a change of picture, not a jump to a different image. */
-const LQIP =
-  "data:image/webp;base64,UklGRqoAAABXRUJQVlA4IJ4AAACwBACdASogABQAPsVSo0unpSMhsAwA8BiJYwDA3CHPLHfYuHK9OWfJ/l1dVswAAP6EFEK0ZhPBTYDiS2caKdG0D6RIQKffgTtUG76aOKv8fkioRsU+P24s/hNmHOWlPhbRzviR85bE5RUbPam3kMlZvwwG+Cc3tg1o8bABaGwdv5qCvqo6zhLfJBOnsoD9q9GbZVzyAYr4sIpXamd4AA==";
+/* ── Hero video ──────────────────────────────────────────────────────────
+   Muted autoplay, played once (no loop — it ends and holds the last frame);
+   the scroll has no hold on it. One 18s, 432-frame 1280×720 H.264 file: the
+   first 9s of _unused-assets/pro7_gwr_video_mvp.mp4, then the first 9s of
+   pro6_gwr_video_mvp.mp4, with their soundtrack (AAC stereo) for the sound
+   toggle. One file, so the join cannot flash or wait on a second download.
+   Poster is frame 0 of the same file. */
+const VIDEO_SRC = "/videos/pro-hero.mp4";
+const POSTER_SRC = "/videos/pro-hero-poster.webp";
 
-/* Imported by hand, after the first paint, rather than through next/dynamic:
-   Next preloads a dynamic() chunk from the page's own payload, so three.js,
-   R3F and the scene (~300k over the wire) were requested at 0.25s, racing the
-   hero copy on a slow connection. PageSpeed's simulated LCP counts every
-   request that starts before the LCP paint, and those were most of its 4.4s. */
-type SceneComponent = typeof import("./HeroScene").default;
+/** Landscape footage. Cover where the screen is close to its shape; on a
+    portrait screen cover would crop ~75% of the width and lose the truck and
+    the PRO TRANS logo, so the whole frame is shown full-width instead. */
+const FIT = "object-contain [@media(min-aspect-ratio:4/3)]:object-cover";
 
-/** A scene that throws (no context, a driver fault) reports it and renders
-    nothing, so the poster stays up instead of the page losing its root. */
-class SceneBoundary extends Component<{ onError: () => void; children: ReactNode }, { failed: boolean }> {
-  state = { failed: false };
-  static getDerivedStateFromError() {
-    return { failed: true };
-  }
-  componentDidCatch() {
-    this.props.onError();
-  }
-  render() {
-    return this.state.failed ? null : this.props.children;
-  }
-}
+const headline = ["Logistics that keep", "retail moving."];
+const intro =
+  "FMCG freight across South India with Pan-India reach. Cold-chain ready and GPS-tracked throughout.";
 
-/** Serve phones the poster instead of the WebGL hero.
- *
- * Off, deliberately: the brief requires the 3D truck to be clearly visible
- * on mobile, so the scene ships to phones and the saving is taken out of the
- * scene instead — the "low" quality path drops shadows, the bloom composer,
- * two thirds of the container field and roughly half the palms, cartons and
- * traffic, and caps the pixel ratio. The hero vehicle itself is never
- * reduced, which is the one thing the brief rules out.
- *
- * The cost is real and worth stating: three.js, its addons, gsap and
- * ScrollTrigger are ~363k gzipped of JavaScript before a line of this
- * project's own code, and Lighthouse's mobile profile applies roughly a 4x
- * CPU slowdown on top. /image.png still covers the first paint and the whole
- * reduced-motion experience.
- *
- * Flip this back to true to trade the mobile 3D for that budget. */
-const SKIP_3D_ON_MOBILE = false;
-
-/** One definition of "phone", used by the render gate and by the GSAP gate
-    below. They have to agree: skipping the canvas but still loading a scroll
-    driver for it would leave the larger half of the saving on the table. */
-const PHONE_QUERY = "(max-width: 767px), (pointer: coarse)";
-
-/* ── Scroll-driven 3D hero ───────────────────────────────────────────────
-   GSAP ScrollTrigger is the single scroll source. It writes to a ref (read
-   inside the canvas's useFrame, so scrolling causes no React render) and to
-   a MotionValue (paced below, which drives the chapter state). */
-
-/** Where each stage starts, as scroll progress — read off HeroScene's own
-    timeline, not picked by eye. The truck loads until 0.52 and clears the
-    warehouse gate at ~0.583 (travelled() reaching EXIT_Z), so "In transit"
-    cannot start before then; the coastal bend nears its apex past 0.67; the
-    terminal barrier starts lifting at 0.82 (GATE_HOLD_A). Retime the scene
-    and these move with it. */
-const STAGE_AT = [0, 0.583, 0.67, 0.82];
-/** Dead band around each boundary, so a scroll parked on the line cannot
-    flicker the chapter. */
-const STAGE_HYST = 0.003;
-
-/** The story completes at this share of the pinned scroll; the rest is a
-    hold on the final frame. The story trails the scroll by design (see
-    lib/pace), so without a hold a quick fling released the pin while the
-    truck was still reversing and the ending played off-screen. */
-const STORY_END = 0.85;
-
-const chapters = [
-  {
-    label: "Warehouse",
-    sub: "Crates loading at the dock",
-    title: ["Logistics that keep", "retail moving."],
-    body: "FMCG freight across South India with Pan-India reach. Cold-chain ready and GPS-tracked throughout.",
-  },
-  {
-    label: "In Transit",
-    sub: "Pan-India line haul",
-    title: ["Sealed at the dock.", "Tracked to the door."],
-    body: "Line haul across the national corridors, every handover logged against the docket.",
-  },
-  {
-    label: "Coastal run",
-    sub: "Coastal corridor, NH-66",
-    title: ["Cold chain that holds", "the whole way."],
-    body: "Thermo King units at 2–8°C down NH-66, temperature logged end to end, not just at the gate.",
-  },
-  {
-    label: "Yard arrival",
-    sub: "Delivered, on time",
-    title: ["Backed onto the quay,", "on schedule."],
-    body: "Reversed into the bay, doors open, paperwork signed. On-time delivery across India.",
-  },
-];
-
-/** Where the badge, CTAs and cards come in: the final beat, as the truck
-    is unloaded and its rear doors have swung shut again (DOORS_SHUT in
-    HeroScene). Until then the story has the screen to itself. They go again
-    at the same point on the way back, read off the same eased progress the
-    scene uses, so they stay in step with it rather than with the raw
-    scroll. Opacity and transform only — every element keeps its box. */
-const UI_AT = 0.9995;
-const UI_OUT_AT = 0.997;
-/** Reveal stagger, top to bottom. Hiding runs together and quicker. */
-const uiTransition = (show: boolean, at: number, duration: number) => ({
-  duration: show ? duration : 0.35,
-  delay: show ? at : 0,
-  ease,
-});
-
-/** Chapter copy swap. Short enough that the shortest chapter (~1.2s at the
-    pace cap) still lands fully opaque, so the copy is never caught
-    mid-fade when the scroll comes to rest. */
-const COPY_OUT = 0.16;
-const COPY_IN_S = 0.3;
-
-/** Which stage a given progress is in, holding `prev` inside the dead band. */
-function stageAt(p: number, prev: number) {
-  let i = 0;
-  for (let k = 1; k < STAGE_AT.length; k++) {
-    if (p >= STAGE_AT[k] + (k > prev ? STAGE_HYST : -STAGE_HYST)) i = k;
-  }
-  return i;
-}
-
-/** Chapter index in the corner — all four always visible, the active one lit.
-    Driven by the same `stage` as the headline, so the two cannot disagree. */
-function ChapterTick({ index, active }: { index: number; active: boolean }) {
-  const t = { duration: 0.35, ease };
-  return (
-    <div className="flex h-8 flex-col items-end justify-start sm:h-9">
-      <m.div
-        initial={false}
-        animate={{ opacity: active ? 1 : 0.3 }}
-        transition={t}
-        className="flex items-center gap-2 sm:gap-3"
-      >
-        {/* Numbers only on a phone. The stacked layout puts the headline
-            directly under this column, and the full labels ran across it —
-            and the active stage's name is already spelled out at the top of
-            the copy, so the ticks lose nothing by being just the index. */}
-        <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-white">
-          <span className="text-accent">{String(index + 1).padStart(2, "0")}</span>
-          <span className="hidden sm:inline"> {chapters[index].label}</span>
-        </span>
-        <m.span
-          initial={false}
-          animate={{ width: active ? 34 : 12 }}
-          transition={t}
-          className="h-px bg-accent"
-        />
-      </m.div>
-      {/* Sub-text belongs to the active stage only, and only where there is
-          room for it — on a phone the column is already the width of the
-          label. The row keeps a fixed height so it never shifts the others. */}
-      <m.span
-        initial={false}
-        animate={{ opacity: active ? 1 : 0, x: active ? 0 : 10 }}
-        transition={t}
-        className="mt-1 hidden text-[10px] leading-none text-white/55 sm:block"
-      >
-        {chapters[index].sub}
-      </m.span>
-    </div>
-  );
-}
+/** Page-load reveal stagger, top to bottom. */
+const uiTransition = (at: number, duration: number) => ({ duration, delay: at, ease });
 
 /** Trust chips anchored to the hero's bottom-right edge (desktop). */
 const chips = [
@@ -239,397 +75,115 @@ const chips = [
 
 export function HomeHero() {
   const reduce = useReducedMotion();
-  const scene = useRef<HTMLElement>(null);
-  // Runway: 620svh on touch, where a swipe travels about a screen's worth
-  // so the runway should scale with the screen. On desktop a wheel notch is
-  // a fixed ~100px whatever the screen, so a short laptop needs a pixel floor
-  // or it gets half the notches per chapter a tall monitor does. Paired with
-  // the pace cap in lib/pace; the sticky panel pins for all of it. Sized so
-  // the dock stage keeps the ~20 wheel notches it had before story() gave
-  // the later stages their own shares (~9–11 notches each, up from 3–6).
-  const progress = useRef(0);
-  // Touch scrolling covers far less document per gesture than a wheel, so a
-  // phone needs its own runway or the whole eight-beat story flies past in
-  // two flicks. Shorter than desktop's, because a phone user is paying for
-  // every one of those viewports in thumb travel.
-  const scroll = useMotionValue(0);
-  // The canvas already damps its own copy of progress inside the render
-  // loop; this is the DOM's equivalent, so the text fades and the chapter
-  // index ease on the same kind of curve instead of snapping frame-for-frame
-  // with the raw scroll position while the scene glides.
-  //
-  // Paced here rather than with ScrollTrigger's scrub: scrub smooths the
-  // driver, which would land on top of the scene's own damping and make the
-  // camera mushy. This smooths only the readers, on the scene's own curve.
-  const eased = useMotionValue(0);
-  const paced = useRef<Pace>({ value: 0, rate: 0 });
-  useAnimationFrame((_, delta) => {
-    // Returns false once settled, so an idle page does no motion-value work.
-    if (pace(paced.current, scroll.get(), delta / 1000)) eased.set(story(paced.current.value));
-  });
-  // The gradient backdrop holds until the canvas has drawn a real frame.
-  // Fading on a timer instead meant a slow GPU washed an empty canvas over
-  // the backdrop before there was anything in it.
-  const [painted, setPainted] = useState(false);
-  // The scene chunk is requested as soon as this mounts, rather than on the
-  // first idle slot.
-  //
-  // It used to wait for requestIdleCallback (700ms ceiling), which kept the
-  // three.js download off the critical path — correct when the only thing
-  // behind the canvas was a bare CSS gradient, because nothing was waiting
-  // on it to look finished. Measured against a throttled connection that
-  // deferral was part of a 1.2s wait on 4G and 3.9s on 3G during which the
-  // hero was an empty sky: the scene is the above-the-fold subject, so the
-  // page looked broken for the whole of it.
-  //
-  // The poster below now covers that window with the real first frame, so
-  // the visitor never waits on an empty hero either way — and with the gap
-  // covered, the right move for the remaining time is to start the download
-  // sooner, not later.
-  // Resolved in an effect rather than at render, so the server and the first
-  // client pass agree and hydration stays quiet.
-  const [phone, setPhone] = useState(false);
-  useEffect(() => {
-    setPhone(window.matchMedia(PHONE_QUERY).matches);
-  }, []);
-  const showScene = !reduce && !(SKIP_3D_ON_MOBILE && phone);
-  const onReady = useCallback(() => setPainted(true), []);
-  // The scene will not arrive: no usable GPU, a lost context, a render error
-  // or a chunk that failed to load. The poster is the fallback and the copy
-  // still runs off the scroll; the loader must not spin over it forever.
-  const [failed, setFailed] = useState(false);
-  const onFail = useCallback(() => setFailed(true), []);
-  // Only once the wait is long enough to notice. On a healthy connection the
-  // scene replaces the poster inside a second and this never shows.
-  const [slow, setSlow] = useState(false);
-  useEffect(() => {
-    if (!showScene || painted || failed) return;
-    const id = window.setTimeout(() => setSlow(true), 1200);
-    return () => window.clearTimeout(id);
-  }, [showScene, painted, failed]);
+  const video = useRef<HTMLVideoElement>(null);
+  // Video shown once it is actually playing; the poster (the same frame 0)
+  // covers until then, and stays if the video never arrives.
+  const [ready, setReady] = useState(false);
+  // Autoplay refused, or reduced motion: offer a play button instead.
+  const [needsTap, setNeedsTap] = useState(false);
 
-  /* Nothing heavy starts until the hero's first frame has been presented.
+  // Starts muted (the only way browsers allow autoplay); the toggle is the
+  // visitor's own gesture, which is what lets audio start.
+  const [muted, setMuted] = useState(true);
+  const toggleSound = () => {
+    const el = video.current;
+    if (!el) return;
+    el.muted = !el.muted;
+    setMuted(el.muted);
+    // Turning sound on after the video has finished replays it from the
+    // start — otherwise the button would appear to do nothing.
+    if (!el.muted && el.ended) el.currentTime = 0;
+    if (!el.muted && el.paused) el.play().catch(() => {});
+  };
 
-     The 3D chunks and GSAP used to be requested during hydration, and on
-     PageSpeed's mobile profile the headline and paragraph (the LCP element)
-     waited behind them. The poster is the scene's own first frame, so the
-     canvas arriving a moment later changes nothing visible. */
-  const [afterPaint, setAfterPaint] = useState(false);
   useEffect(() => {
-    if (!showScene) return;
-    let idle = 0;
-    let fired = false;
-    let observer: PerformanceObserver | undefined;
-    const go = () => {
-      if (fired) return;
-      fired = true;
-      observer?.disconnect();
-      // An idle slot after the paint, capped so a busy page cannot hold it off.
-      const ric = window.requestIdleCallback ?? ((cb: () => void) => window.setTimeout(cb, 1));
-      idle = ric(() => setAfterPaint(true), { timeout: 600 });
+    const el = video.current;
+    if (!el) return;
+    // The property, not only the attribute: React does not reliably render
+    // `muted`, and iOS Safari only autoplays a video that is muted.
+    el.muted = true;
+    const onPlaying = () => {
+      setReady(true);
+      setNeedsTap(false);
     };
-    // Keyed to the browser's own first-contentful-paint entry, not to
-    // requestAnimationFrame: on a cold start rAF runs frames that are never
-    // presented, and it fired a full second before the text was on screen.
-    // The hero copy is the LCP element and paints in that same frame.
-    if (PerformanceObserver.supportedEntryTypes?.includes("paint")) {
-      observer = new PerformanceObserver((list) => {
-        if (list.getEntriesByName("first-contentful-paint").length) go();
-      });
-      observer.observe({ type: "paint", buffered: true });
-    } else {
-      // No paint timing: two frames is the best available stand-in.
-      requestAnimationFrame(() => requestAnimationFrame(go));
-    }
-    // A tab opened in the background never records a first paint at all.
-    // Only a backstop: a cold start in the lab takes up to four seconds to
-    // present its first frame and must not be cut short.
-    const backstop = window.setTimeout(go, 6000);
-    const onShow = () => {
-      if (document.visibilityState === "visible") requestAnimationFrame(() => requestAnimationFrame(go));
-    };
-    if (document.visibilityState === "hidden") document.addEventListener("visibilitychange", onShow);
+    el.addEventListener("playing", onPlaying);
+    // The query as well as `reduce`: the hook reports false for one commit
+    // to keep hydration quiet, and nothing should start moving in it.
+    if (reduce || matchMedia("(prefers-reduced-motion: reduce)").matches) setNeedsTap(true);
+    else el.play().catch(() => setNeedsTap(true));
     return () => {
-      observer?.disconnect();
-      window.clearTimeout(backstop);
-      document.removeEventListener("visibilitychange", onShow);
-      (window.cancelIdleCallback ?? window.clearTimeout)(idle);
+      el.removeEventListener("playing", onPlaying);
     };
-  }, [showScene]);
-
-  /* Renderer string, read in a worker from mount: null while pending, "" if
-     unknown. A software rasteriser is told apart here, before three.js and the
-     scene (~250k) are fetched, and without the seconds-long main-thread stall
-     its first WebGL context costs. See lib/gpu-probe. */
-  const [renderer, setRenderer] = useState<string | null>(null);
-  useEffect(() => {
-    if (!showScene) return;
-    let live = true;
-    void probeGpuOffThread().then((name) => {
-      if (!live) return;
-      if (SOFTWARE_GPU.test(name)) setFailed(true);
-      else setRenderer(name);
-    });
-    return () => {
-      live = false;
-    };
-  }, [showScene]);
-
-  const [HeroScene, setHeroScene] = useState<SceneComponent | null>(null);
-  useEffect(() => {
-    if (!afterPaint || renderer === null) return;
-    let cancelled = false;
-    import("./HeroScene").then(
-      (mod) => {
-        if (!cancelled) setHeroScene(() => mod.default);
-      },
-      () => {
-        if (!cancelled) setFailed(true);
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [afterPaint, renderer]);
-
-  useEffect(() => {
-    // Waits for the first paint with the scene chunk, for the same reason.
-    if (reduce || !afterPaint) return;
-    // Checked here rather than from the `phone` state above, and that matters:
-    // state resolves after the first render, by which point this effect has
-    // already fired and the import is in flight. Querying synchronously means
-    // GSAP is never requested on a phone when the canvas is not going to be
-    // there either — the two gates have to agree.
-    if (SKIP_3D_ON_MOBILE && window.matchMedia(PHONE_QUERY).matches) return;
-
-    let cancelled = false;
-    let trigger: { kill: () => void } | undefined;
-
-    // Imported lazily so GSAP stays out of the initial bundle.
-    void (async () => {
-      const [gsapMod, stMod] = await Promise.all([
-        import("gsap"),
-        import("gsap/ScrollTrigger"),
-      ]);
-      if (cancelled || !scene.current) return;
-      const gsap = gsapMod.gsap ?? gsapMod.default;
-      gsap.registerPlugin(stMod.ScrollTrigger);
-      // Mobile address bars resize the viewport as they show and hide; a
-      // refresh on each one re-measured the pin mid-gesture and jumped the
-      // story. The runway is in svh, which does not move with the bar.
-      stMod.ScrollTrigger.config({ ignoreMobileResize: true });
-      trigger = stMod.ScrollTrigger.create({
-        trigger: scene.current,
-        start: "top top",
-        end: "bottom bottom",
-        onUpdate: (self) => {
-          // In story() units: see STORY_LENGTH in lib/pace.
-          const p = Math.min(1, self.progress / STORY_END) * STORY_LENGTH;
-          progress.current = p;
-          scroll.set(p);
-        },
-      });
-    })();
-
-    return () => {
-      cancelled = true;
-      trigger?.kill();
-    };
-  }, [reduce, scroll, afterPaint]);
-
-  // Which chapter is showing — the one value the index ticks, the stage
-  // marker, the headline and the paragraph all read, taken straight off the
-  // same eased progress the scene renders from. React state rather than a
-  // MotionValue on purpose: the text changes as a discrete swap, four times
-  // across the whole scroll.
-  //
-  // It used to step one chapter at a time, each swap waiting for the last
-  // to land. That chain is what put the copy out of step with the scene and
-  // left it mid-fade at rest. It is not needed to avoid skipping a beat:
-  // lib/pace gives every chapter its own share of the scroll and caps the
-  // rate, so even the shortest is on screen ~1.2s, far longer than one swap
-  // (COPY_OUT + COPY_IN_S).
-  const [stage, setStage] = useState(0);
-  const stageRef = useRef(0);
-  // The word-by-word reveal is the page-load moment only. Replaying it on
-  // the way back up held the headline off-screen for ~1.5s.
-  const intro = useRef(true);
-  const [uiIn, setUiIn] = useState(false);
-  const uiShown = useRef(false);
-  // Runs every frame the story moves, so it only touches React when a value
-  // actually changes.
-  useMotionValueEvent(eased, "change", (v) => {
-    const next = stageAt(v, stageRef.current);
-    if (next !== stageRef.current) {
-      stageRef.current = next;
-      intro.current = false;
-      setStage(next);
-    }
-    // Hysteresis, so a scroll parked right on the line cannot flicker it.
-    const ui = uiShown.current ? v >= UI_OUT_AT : v >= UI_AT;
-    if (ui !== uiShown.current) {
-      uiShown.current = ui;
-      setUiIn(ui);
-    }
-  });
-  // Reduced motion has no story to wait for: everything is there at once.
-  const showUi = reduce || uiIn;
-  const copy = reduce ? chapters[0] : chapters[stage];
-
-  // No transform on this panel, and specifically no scale. R3F measures its
-  // container with getBoundingClientRect() and does not pass offsetSize to
-  // react-use-measure, so an ancestor transform feeds back into the measured
-  // size: a 0.94 scale made it call gl.setSize(0.94w, 0.94h), which writes
-  // that width onto the canvas element's own style. The canvas then covered
-  // 94% of an already-94% box and the poster photo showed through the
-  // remainder — the sky band down the right edge at the yard stage.
-  //
-  // The sticky pin releases at the end of the section, after the story has
-  // finished and held (STORY_END). That hand-off never needed help.
+  }, [reduce]);
 
   return (
-    <section
-      ref={scene}
-      // bg-ink, not the page's near-white: the release below scales the panel
-      // to 0.94, and whatever sits behind it becomes a visible frame on all
-      // four sides. Against #fffcfc that frame reads as a white gap tearing
-      // open down the edges; against ink it reads as the panel insetting.
-      className="relative bg-ink h-[731svh] lg:h-[max(913vh,7860px)]"
-    >
-      {/* The pinned panel and the copy column both get their own compositor
-          layer. Without it every scroll tick repaints a full-viewport stack
-          of gradients, blurred chips and text against a canvas that is
-          itself changing — on the main thread, next to the scroll handler. */}
-      {/* Pinned at every breakpoint now that phones get the scene: without
-          this the section is 300vh of scroll with the canvas scrolled off the
-          top of it after the first one. */}
-      <div className="transform-gpu will-change-transform sticky top-0">
-        {/* Hero module — inset rounded image panel */}
-        <div className="relative">
-          {/* h-svh, not h-screen with a min-height: a sticky panel taller than the
-              visible viewport has its bottom (the cards) cut off for the whole
-              pin. svh is the height with mobile browser chrome showing. */}
-          <div className="relative h-svh overflow-hidden bg-ink">
-            {/* Scroll-driven WebGL scene. There is no poster photograph —
-                the hero is the 3D scene and nothing else.
-
-                What sits under it until the first frame paints is a CSS
-                gradient, and its stops are the scene's own sky gradient from
-                useProceduralEnv: blue zenith, hazy horizon band, dark ground.
-                Behind the scrim that reads as an out-of-focus sky, and when
-                the canvas fades in it is fading onto approximately the
-                colours already there — so the hand-off is the scene
-                resolving rather than one image replacing another. */}
-            <div
-              className="absolute inset-0 overflow-hidden bg-[linear-gradient(180deg,#3f6fae_0%,#8fb0cd_30%,#d6dde0_44%,#f3ecdf_50%,#9c8f7e_56%,#3a332b_100%)]"
-              // Both layers named here on purpose. An inline background-image
-              // replaces the class's outright rather than stacking with it,
-              // and the thumbnail is opaque, so the gradient would be dead
-              // weight if it were only in the class. Declaring it as the
-              // lower layer keeps it as the fallback that actually paints if
-              // the data URI ever fails to decode.
-              style={{
-                backgroundImage: `url("${LQIP}"), linear-gradient(180deg,#3f6fae 0%,#8fb0cd 30%,#d6dde0 44%,#f3ecdf 50%,#9c8f7e 56%,#3a332b 100%)`,
-                backgroundSize: "cover, cover",
-                backgroundPosition: "center, center",
-              }}
-            >
-              {/* First frame of the scene as a static image, behind the
-                  canvas and in the initial HTML so the preload scanner finds
-                  it immediately. 38kB desktop / 15kB mobile of WebP — about
-                  165ms on the 3G profile that waits 3.9s for the canvas.
-
-                  Re-capture both files (and the LQIP above) whenever the
-                  scene's opening frame changes: a stale poster made the
-                  truck jump and ghost through the crossfade to the canvas.
-
-                  Two files rather than one scaled: the camera framing at
-                  p = 0 is a landscape composition with the truck right of
-                  centre, and object-cover cropping that to a 0.46 aspect
-                  phone screen throws the truck off the frame. `picture`
-                  picks one and downloads only that.
-
-                  Rendered even when `showScene` is false, which is the
-                  reduced-motion case: a still of the dock is a better answer
-                  there than a bare gradient, and it is already static.
-
-                  aria-hidden with an empty alt: the canvas it stands in for
-                  is aria-hidden too, and the headline beside it already
-                  carries the meaning. */}
-              <picture>
-                <source
-                  media="(max-width: 767px)"
-                  srcSet="/hero-poster-mobile.webp"
-                  width={760}
-                  height={1645}
-                />
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/hero-poster.webp"
-                  alt=""
-                  aria-hidden="true"
-                  width={1600}
-                  height={1000}
-                  fetchPriority="high"
-                  decoding="async"
-                  className="absolute inset-0 h-full w-full object-cover"
-                />
-              </picture>
-              {showScene && HeroScene && !failed && (
-                <m.div
-                  className="absolute inset-0"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: painted ? 1 : 0 }}
-                  transition={{ duration: 0.9, ease }}
-                >
-                  <SceneBoundary onError={onFail}>
-                    <HeroScene progress={progress} renderer={renderer ?? ""} onReady={onReady} onFail={onFail} />
-                  </SceneBoundary>
-                </m.div>
-              )}
+    <section className="relative bg-ink">
+      {/* Hero module — inset rounded image panel */}
+      <div className="relative">
+        {/* h-svh: the height with mobile browser chrome showing, so the
+            cards at the bottom are never under it. */}
+        <div className="relative h-svh overflow-hidden bg-ink">
+            {/* Poster under the video: frame 0 of the same file, in the
+                initial HTML so it paints before any script runs, and the
+                whole hero for reduced motion or a video that fails. Same fit
+                as the video, so the hand-off is invisible. aria-hidden: the
+                headline beside it already carries the meaning. */}
+            <div className="absolute inset-0 overflow-hidden">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={POSTER_SRC}
+                alt=""
+                aria-hidden="true"
+                width={1280}
+                height={720}
+                fetchPriority="high"
+                decoding="async"
+                className={`absolute inset-0 h-full w-full ${FIT}`}
+              />
+              {/* preload="none": play() starts the download, so reduced
+                  motion never fetches 11MB it will not show. */}
+              <video
+                ref={video}
+                src={VIDEO_SRC}
+                muted
+                playsInline
+                preload="none"
+                disablePictureInPicture
+                disableRemotePlayback
+                aria-hidden="true"
+                tabIndex={-1}
+                className={`absolute inset-0 h-full w-full ${FIT} transition-opacity duration-300 ${ready ? "opacity-100" : "opacity-0"}`}
+              />
             </div>
 
+            {needsTap && (
+              <button
+                type="button"
+                onClick={() => video.current?.play().catch(() => {})}
+                aria-label="Play hero video"
+                className="absolute left-1/2 top-1/2 z-30 flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/30 bg-ink/60 text-white backdrop-blur-sm transition-colors duration-300 hover:bg-accent hover:text-ink"
+              >
+                <svg className="ml-1 h-6 w-6" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M7 4.5v15l13-7.5-13-7.5Z" />
+                </svg>
+              </button>
+            )}
 
-            {/* Loading state, over the poster, while the 3D scene is still
-                coming in. The poster is the scene's own first frame, so the
-                hero already looks right; this only says it is not live yet. */}
-            <AnimatePresence>
-              {showScene && slow && !painted && !failed && (
-                <m.div
-                  role="status"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.4, ease }}
-                  className="absolute bottom-6 right-4 z-10 flex w-44 flex-col gap-2 sm:right-6 rounded-lg border border-white/15 bg-ink/70 px-4 py-3 sm:flex"
-                >
-                  <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-white/80">
-                    <span className="text-accent">●</span> Loading 3D scene
-                  </span>
-                  <span className="relative h-px overflow-hidden bg-white/15">
-                    <m.span
-                      className="absolute inset-y-0 left-0 w-1/3 bg-accent"
-                      animate={{ x: ["-100%", "300%"] }}
-                      transition={{ duration: 1.4, ease: "easeInOut", repeat: Infinity }}
-                    />
-                  </span>
-                </m.div>
-              )}
-            </AnimatePresence>
-
-            {/* Chapter index.
-
-                Cleared below the fixed navbar at every width. The bar is 16px
-                from the top and 64px tall above sm, so `sm:top-6` (24px) ran
-                the "01 Warehouse" and "02 In Transit" rows straight through
-                the back of it — visible in any screenshot of the desktop
-                hero. 5.5rem clears the 80px with room to breathe. */}
-            {showScene && (
-              <div className="absolute right-4 top-[4.6rem] z-10 flex flex-col items-end gap-1 sm:right-6 sm:top-[5.5rem]">
-                {chapters.map((c, i) => (
-                  <ChapterTick key={c.label} index={i} active={i === stage} />
-                ))}
-              </div>
+            {/* Sound toggle, top right under the navbar. Only once the video
+                is playing — before that there is nothing to hear. */}
+            {ready && (
+              <button
+                type="button"
+                onClick={toggleSound}
+                aria-label={muted ? "Turn sound on" : "Turn sound off"}
+                aria-pressed={!muted}
+                className="absolute right-4 top-[4.6rem] z-30 flex h-10 w-10 items-center justify-center rounded-full border border-white/30 bg-ink/50 text-white backdrop-blur-sm transition-colors duration-300 hover:bg-accent hover:text-ink sm:right-6 sm:top-[5.5rem]"
+              >
+                <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M11 5 6 9H3v6h3l5 4V5Z" />
+                  {muted ? <path d="m16 9 5 6m0-6-5 6" /> : <path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" />}
+                </svg>
+              </button>
             )}
 
             {/* Legibility scrim — the copy column sits at full opacity on top
@@ -651,65 +205,22 @@ export function HomeHero() {
                 absolutely-positioned canvas by DOM order — but it states the
                 intent, and it keeps the CTAs above anything added later. */}
             <div className="relative z-20 transform-gpu flex h-svh flex-col p-7 pb-8 pt-20 sm:p-12 sm:pb-10 sm:pt-32 lg:p-16 lg:pb-12 lg:pt-32 squat:pb-5 squat:pt-[4.5rem] short:pb-6 short:pt-24">
-              {/* Stage marker, headline and paragraph, all keyed to the same
-                  stage so they change together.
-
-                  One h1 and one p in the DOM at a time, with the text swapped
-                  rather than four copies stacked and faded: four h1 elements
-                  is four headings for a screen reader to walk through, and
-                  the outgoing copy stays selectable and searchable while it
-                  is invisible. AnimatePresence mode="wait" holds the incoming
-                  until the outgoing has gone, so they never overlap. */}
-              {/* pr-6 below sm clears the chapter rail pinned top-right, which
-                  otherwise runs through the headline at 320px. */}
-              <div className="min-h-[230px] pr-6 sm:pr-0 sm:min-h-[290px] lg:min-h-[320px] squat:min-h-0 short:min-h-0">
-                <AnimatePresence mode="wait" initial={false}>
-                  <m.div
-                    key={stage}
-                    initial={reduce ? false : { opacity: 0, y: 12 }}
-                    animate={{ opacity: 1, y: 0, transition: { duration: COPY_IN_S, ease } }}
-                    exit={
-                      reduce
-                        ? undefined
-                        : { opacity: 0, y: -8, transition: { duration: COPY_OUT, ease: "easeIn" } }
-                    }
-                  >
-                    {!reduce && (
-                      <span
-                        className="mb-5 squat:mb-3 short:mb-3 block font-mono text-[11px] uppercase tracking-[0.18em] text-accent"
-                        aria-hidden="true"
-                      >
-                        {String(stage + 1).padStart(2, "0")} — {copy.label}
-                      </span>
-                    )}
-                    {/* Two blocks, so the break is a decision rather than a
-                        wrap that happens to land there at one width. The
-                        clamp floor is set so the longest first line still
-                        fits a 360px screen inside the column padding. */}
-                    {/* 720px and a 4rem cap, because the longest first line
-                        is 21 characters: at the old 4.3rem cap that measured
-                        ~679px against a 640px column and broke to a third
-                        line on three of the four headings. */}
-                    <h1 className="max-w-[720px] font-display text-[clamp(1.75rem,5.4vw,4rem)] squat:text-[1.6rem] short:text-[clamp(1.75rem,min(5.4vw,7.5vh),4rem)] font-600 leading-[1.04] tracking-tighter text-white">
-                      {copy.title.map((line, i) => (
-                        <span key={line} className="block">
-                          {stage === 0 && intro.current && !reduce ? (
-                            <StaggerText text={line} delay={0.1 + i * 0.18} />
-                          ) : (
-                            line
-                          )}
-                        </span>
-                      ))}
-                    </h1>
-                    {/* text-pretty keeps the last line from breaking to a
-                        single orphaned word. */}
-                    <p className="mt-5 max-w-[480px] text-pretty text-base leading-relaxed text-white/80 sm:text-lg squat:mt-3 squat:text-[15px] short:mt-3 short:text-base">
-                      {copy.body}
-                    </p>
-                  </m.div>
-                </AnimatePresence>
+              <div className="min-h-[230px] sm:min-h-[290px] lg:min-h-[320px] squat:min-h-0 short:min-h-0">
+                {/* Two blocks, so the break is a decision rather than a wrap
+                    that happens to land there at one width. */}
+                <h1 className="max-w-[720px] font-display text-[clamp(1.75rem,5.4vw,4rem)] squat:text-[1.6rem] short:text-[clamp(1.75rem,min(5.4vw,7.5vh),4rem)] font-600 leading-[1.04] tracking-tighter text-white">
+                  {headline.map((line, i) => (
+                    <span key={line} className="block">
+                      {reduce ? line : <StaggerText text={line} delay={0.1 + i * 0.18} />}
+                    </span>
+                  ))}
+                </h1>
+                {/* text-pretty keeps the last line from breaking to a single
+                    orphaned word. */}
+                <p className="mt-5 max-w-[480px] text-pretty text-base leading-relaxed text-white/80 sm:text-lg squat:mt-3 squat:text-[15px] short:mt-3 short:text-base">
+                  {intro}
+                </p>
               </div>
-
 
               {/* Standing claim, not a scroll payoff — it used to fade in
                   with the rear doors at p 0.84, so it never appeared at all
@@ -728,11 +239,11 @@ export function HomeHero() {
                   the CTAs, which left the buttons floating in a blank band
                   with the badge's slot above them and the cards' below. In
                   document order each item lands directly under one that is
-                  already visible. Held until the story's final beat — see UI_AT. */}
+                  already visible. */}
               <m.div
                 initial={reduce ? undefined : { opacity: 0, y: 10 }}
-                animate={showUi ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
-                transition={uiTransition(showUi, 0, 0.6)}
+                animate={{ opacity: 1, y: 0 }}
+                transition={uiTransition(0, 0.6)}
                 className="mb-4 squat:mb-2 short:mb-3 mt-auto inline-flex self-start items-center gap-2.5 rounded-full bg-paper/95 py-2.5 pl-3 pr-4 shadow-lg"
               >
                 <span className="flex h-6 w-6 items-center justify-center rounded-full bg-accent">
@@ -755,12 +266,8 @@ export function HomeHero() {
                 // pointerEvents rides the same delay as the fade, so the
                 // buttons cannot be clicked while they are still invisible.
                 initial={reduce ? undefined : { opacity: 0, y: 18, pointerEvents: "none" }}
-                animate={
-                  showUi
-                    ? { opacity: 1, y: 0, pointerEvents: "auto" }
-                    : { opacity: 0, y: 18, pointerEvents: "none" }
-                }
-                transition={uiTransition(showUi, 0.1, 0.7)}
+                animate={{ opacity: 1, y: 0, pointerEvents: "auto" }}
+                transition={uiTransition(0.1, 0.7)}
                 className="relative z-50 flex flex-wrap items-center gap-3"
               >
                 <Link
@@ -829,8 +336,8 @@ export function HomeHero() {
                   <m.div
                     key={chip.title}
                     initial={reduce ? undefined : { opacity: 0, y: 20 }}
-                    animate={showUi ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-                    transition={uiTransition(showUi, 0.2 + i * 0.1, 0.65)}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={uiTransition(0.2 + i * 0.1, 0.65)}
                     className="flex flex-row items-center gap-2.5 rounded-2xl border border-white/20 bg-ink/60 bg-[linear-gradient(160deg,rgba(255,255,255,0.14),rgba(255,255,255,0.04))] p-2 shadow-[0_8px_32px_-12px_rgba(0,0,0,0.6)] sm:flex-col sm:items-stretch sm:gap-0 sm:p-5 short:p-3.5"
                   >
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 text-accent sm:h-10 sm:w-10 short:h-8 short:w-8">
@@ -866,7 +373,6 @@ export function HomeHero() {
 
           </div>
         </div>
-      </div>
     </section>
   );
 }
