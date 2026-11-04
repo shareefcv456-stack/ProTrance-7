@@ -2,31 +2,24 @@
 //
 //   HERO_URL=http://localhost:3000 npm run test:hero
 //
-// Drives the real WebGL scene in Chrome (CHROME_PATH, or the default macOS
-// install) and reads transforms off it through the `?hero-debug` hook:
-//   1. renderer init: the scene reveals, the loader clears, no page errors;
-//   2. cargo: once loaded (p >= 0.53) every crate sits inside the trailer
-//      body until the yard unload, is only ever between trailer and quay
-//      while both doors are fully open, and is on the quay stack once
-//      unloaded; the doors are shut at the end. Checked every frame while
-//      scrolling forward and back;
-//   3. grounding: every hero wheel touches the ground, every frame;
-//   4. stage sync: at rest in each stage the marker, the lit index and the
-//      scene's own progress agree, and the copy is fully opaque;
-//   5. fallback: with WebGL disabled there is no canvas, no stuck loader and
-//      the copy still renders.
+// Drives the autoplaying hero video in Chrome (CHROME_PATH, or the default
+// macOS install):
+//   1. load: poster first, video autoplays muted inline, one download,
+//      18s at 1280×720, no errors, no overflow or layout shift at any width;
+//   2. playback: crosses the 9s join into the second clip and ends on the
+//      final frame; the chapter marker follows the playback time;
+//   3. scroll: scrolling never pauses, seeks or reverses the video;
+//   4. fallbacks: blocked autoplay and reduced motion show a play button
+//      that works; a failed video keeps the poster.
 import { chromium } from "playwright-core";
 
 const URL = process.env.HERO_URL ?? "http://localhost:3000";
 const CHROME =
   process.env.CHROME_PATH ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-// Mirrors STAGE_AT in components/home/HomeHero.tsx.
-const STAGE_AT = [0, 0.583, 0.67, 0.82];
-const stageOf = (p) => STAGE_AT.filter((s) => p >= s).length - 1;
-// Mirror the yard epilogue in components/home/HeroScene.tsx.
-const UNLOAD_A = 0.9735;
-const UNLOAD_B = 0.9905;
-const DOORS_SHUT = 0.9995;
+// Mirror components/home/HomeHero.tsx.
+const FPS = 24;
+const STAGE_AT = [0, 287 / FPS, 383 / FPS, 418 / FPS];
+const stageOf = (t) => STAGE_AT.filter((s) => t >= s).length - 1;
 
 const failures = [];
 const check = (ok, msg) => {
@@ -34,177 +27,173 @@ const check = (ok, msg) => {
   if (!ok) failures.push(msg);
 };
 
-async function open(args, viewport) {
-  const browser = await chromium.launch({ executablePath: CHROME, headless: true, args });
-  const page = await browser.newPage({ viewport });
+async function open(viewport, opts = {}, init) {
+  const browser = await chromium.launch({ executablePath: CHROME, headless: true });
+  const page = await browser.newPage({ viewport, ...opts });
+  if (init) await page.addInitScript(init);
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  return { browser, page, errors };
+  page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
+  let videoRequests = 0;
+  page.on("request", (r) => r.url().includes("pro-hero.mp4") && videoRequests++);
+  await page.goto(URL, { waitUntil: "load" });
+  return { browser, page, errors, videoRequests: () => videoRequests };
 }
 
-/** Installs a per-frame sampler in the page; returns its violations on stop. */
-const SAMPLER = ([UNLOAD_A, UNLOAD_B, DOORS_SHUT]) => {
-  const scene = window.__hero.scene;
-  const doors = scene.getObjectByName("hero-doors");
-  const truck = scene.getObjectByName("hero-truck");
-  const cargo = scene.getObjectByName("hero-cargo");
-  const wheels = scene.getObjectByName("hero-wheels");
-  const V = truck.position.constructor;
-  const v = new V();
-  const out = { frames: 0, cargo: [], ground: [], doors: [], maxP: 0 };
-  // Trailer interior (truck-local), shrunk by a crate's half-size (0.575).
-  const IN = { x: [-0.72, 0.72], y: [1.6, 3.4], z: [-4.42, 1.72] };
-  const inside = (q) =>
-    q.x >= IN.x[0] && q.x <= IN.x[1] && q.y >= IN.y[0] && q.y <= IN.y[1] && q.z >= IN.z[0] && q.z <= IN.z[1];
-  const tick = () => {
-    if (!window.__heroSampling) return;
-    out.frames++;
-    const p = scene.userData.progress ?? 0;
-    out.maxP = Math.max(out.maxP, p);
-    const open = Math.min(...doors.children.map((d) => Math.abs(d.rotation.y)));
-    const at = (q) => `(${q.x.toFixed(2)}, ${q.y.toFixed(2)}, ${q.z.toFixed(2)})`;
-    if (p >= 0.53) {
-      for (const crate of cargo.children) {
-        truck.worldToLocal(crate.getWorldPosition(v));
-        // Quay stack: past the doors' swing, resting on the slab or a crate.
-        const quay = v.z < -7.9 && (Math.abs(v.y - 0.545) < 0.02 || Math.abs(v.y - 1.595) < 0.02);
-        const bad =
-          p <= UNLOAD_A ? !inside(v) : p >= UNLOAD_B ? !quay : !inside(v) && !quay && open < 1.99;
-        if (bad && out.cargo.length < 5) out.cargo.push(`p=${p.toFixed(4)} crate at ${at(v)}, doors ${open.toFixed(2)}`);
-      }
-    }
-    if (p >= DOORS_SHUT && open > 1e-3 && out.doors.length < 5)
-      out.doors.push(`p=${p.toFixed(4)} doors still ${open.toFixed(3)} rad open`);
-    for (const w of wheels.children) {
-      w.getWorldPosition(v);
-      if (Math.abs(v.y - 0.53) > 0.06 && out.ground.length < 5)
-        out.ground.push(`p=${p.toFixed(3)} wheel centre y=${v.y.toFixed(3)}`);
-    }
-    requestAnimationFrame(tick);
-  };
-  window.__heroSampling = true;
-  window.__heroSamples = out;
-  requestAnimationFrame(tick);
-};
-
-const domState = (page) =>
+const state = (page) =>
   page.evaluate(() => {
-    const h1 = document.querySelector("h1");
-    const ticks = [...document.querySelectorAll("section .font-mono.text-\\[10px\\]")].map(
-      (el) => +getComputedStyle(el.parentElement).opacity,
-    );
+    const s = document.querySelector("section");
+    const v = s.querySelector("video");
+    const h1 = s.querySelector("h1");
     return {
-      marker: +h1.previousElementSibling.textContent.slice(0, 2) - 1,
-      lit: ticks.indexOf(Math.max(...ticks)),
-      opacity: +getComputedStyle(h1.parentElement).opacity,
-      p: window.__hero.scene.userData.progress ?? 0,
+      t: v.currentTime,
+      paused: v.paused,
+      ended: v.ended,
+      duration: v.duration,
+      w: v.videoWidth,
+      h: v.videoHeight,
+      muted: v.muted,
+      inline: v.hasAttribute("playsinline"),
+      shown: +getComputedStyle(v).opacity,
+      marker: h1.previousElementSibling ? +h1.previousElementSibling.textContent.slice(0, 2) - 1 : -1,
+      button: !!s.querySelector('button[aria-label="Play hero video"]'),
+      cta: +getComputedStyle(s.querySelector('a[href="/contact"]').parentElement).opacity,
     };
   });
 
-const scrollTo = (page, p) =>
-  page.evaluate((p) => {
-    const s = document.querySelector("section");
-    window.scrollTo(0, s.offsetTop + p * 0.85 * (s.offsetHeight - innerHeight));
-  }, p);
-
-async function sceneRun(viewport, label) {
-  const { browser, page, errors } = await open(
-    ["--use-angle=metal", "--enable-gpu", "--ignore-gpu-blocklist"],
-    viewport,
-  );
-  await page.goto(`${URL}/?hero-debug`, { waitUntil: "networkidle" });
-  const revealed = await page
-    .waitForFunction(
-      () => {
-        const c = document.querySelector("section canvas");
-        let o = 1;
-        for (let el = c; el && el.tagName !== "SECTION"; el = el.parentElement) o *= +getComputedStyle(el).opacity;
-        return !!(window.__hero && c && o > 0.99);
-      },
-      null,
-      { timeout: 20000 },
-    )
+const playing = (page) =>
+  page
+    .waitForFunction(() => {
+      const v = document.querySelector("section video");
+      return v && !v.paused && v.currentTime > 0.2 && +getComputedStyle(v).opacity > 0.99;
+    }, null, { timeout: 20000 })
     .then(() => true, () => false);
-  check(revealed, `${label}: renderer initialises and the scene is revealed`);
-  if (!revealed) return browser.close();
-  check(!(await page.$('[role="status"]')), `${label}: loading indicator cleared`);
 
-  // Forward then reverse with the wheel, sampling every rendered frame.
-  await page.evaluate(SAMPLER, [UNLOAD_A, UNLOAD_B, DOORS_SHUT]);
-  await page.mouse.move(viewport.width / 2, viewport.height / 2);
-  for (const dir of [1, -1]) {
-    // Until the scroll is past the end of the story (or back at the top),
-    // however long the runway is.
-    for (let k = 0; k < 400; k++) {
-      const u = await page.evaluate(() => {
-        const s = document.querySelector("section");
-        return (scrollY - s.offsetTop) / (0.85 * (s.offsetHeight - innerHeight));
-      });
-      if (dir > 0 ? u >= 1 : u <= 0) break;
-      await page.mouse.wheel(0, dir * 160);
-      await page.waitForTimeout(50);
-    }
-    // Long enough for the paced story to finish the yard epilogue.
-    await page.waitForTimeout(9000);
-  }
-  const s = await page.evaluate(() => {
-    window.__heroSampling = false;
-    return window.__heroSamples;
+async function autoplayRun(viewport, label) {
+  const { browser, page, errors, videoRequests } = await open(viewport, { hasTouch: viewport.width < 768, isMobile: viewport.width < 768 });
+  await page.evaluate(() => {
+    window.__cls = 0;
+    new PerformanceObserver((l) => l.getEntries().forEach((e) => e.hadRecentInput || (window.__cls += e.value))).observe({ type: "layout-shift", buffered: true });
   });
-  check(s.frames > 200, `${label}: sampled ${s.frames} frames across forward + reverse scroll`);
-  check(s.cargo.length === 0, `${label}: cargo stays aboard until the yard, leaves only through open doors, ends on the quay${s.cargo.length ? " — " + s.cargo.join("; ") : ""}`);
-  check(s.maxP > 0.9999, `${label}: the story reached its final frame (p=${s.maxP.toFixed(4)})`);
-  check(s.doors.length === 0, `${label}: doors fully shut at the end${s.doors.length ? " — " + s.doors.join("; ") : ""}`);
-  check(s.ground.length === 0, `${label}: wheels stay on the ground${s.ground.length ? " — " + s.ground.join("; ") : ""}`);
+  const poster = await page.$eval("section img", (i) => i.complete && i.naturalWidth === 1280);
+  check(poster, `${label}: poster (frame 0, 1280px) painted`);
+  check(await playing(page), `${label}: video autoplays without any scroll or tap`);
+  let s = await state(page);
+  check(s.muted && s.inline && !s.button, `${label}: muted + playsinline, no play button needed`);
+  check(Math.abs(s.duration - 18) < 0.05 && s.w === 1280 && s.h === 720, `${label}: ${s.duration}s at ${s.w}×${s.h}`);
+  await page.waitForTimeout(1200); // the page-load reveal
+  const cta = (await state(page)).cta;
+  check(cta > 0.99, `${label}: CTAs visible while the video plays (opacity ${cta.toFixed(2)})`);
 
-  // At rest in each stage, both directions.
-  // Scroll shares, one inside each stage (lib/pace story()), and the end.
-  for (const p of [0.17, 0.4, 0.56, 0.72, 1, 0.72, 0.56, 0.4, 0.17]) {
-    await scrollTo(page, p);
-    await page.waitForTimeout(p === 1 ? 9000 : 3500);
-    const d = await domState(page);
-    if (p === 1) {
-      const end = await page.evaluate(() => {
-        const sc = window.__hero.scene;
-        return {
-          doors: Math.max(...sc.getObjectByName("hero-doors").children.map((d) => Math.abs(d.rotation.y))),
-          z: Math.max(...sc.getObjectByName("hero-cargo").children.map((c) => {
-            const t = sc.getObjectByName("hero-truck");
-            return t.worldToLocal(c.getWorldPosition(c.position.clone())).z;
-          })),
-        };
-      });
-      check(
-        end.doors < 1e-3 && end.z < -7.9,
-        `${label}: final frame — doors shut (${end.doors.toFixed(4)} rad), cargo on the quay (nearest z ${end.z.toFixed(2)})`,
-      );
+  // Scrolling has no hold on the video: it keeps playing at its own pace.
+  s = await state(page);
+  const t0 = s.t;
+  const w0 = Date.now();
+  if (viewport.width < 768) {
+    const cdp = await page.context().newCDPSession(page);
+    for (const dy of [-500, -500, 400, -300]) await cdp.send("Input.synthesizeScrollGesture", { x: 150, y: 500, yDistance: dy, gestureSourceType: "touch", speed: 1500 });
+  } else {
+    await page.mouse.move(700, 450);
+    for (const dy of [600, 600, -400, 900, -1200]) {
+      await page.mouse.wheel(0, dy);
+      await page.waitForTimeout(120);
     }
-    const want = stageOf(d.p);
-    check(
-      d.marker === want && d.lit === want && d.opacity > 0.99,
-      `${label}: at p=${d.p.toFixed(3)} marker ${d.marker + 1}, index ${d.lit + 1}, scene stage ${want + 1}, copy opacity ${d.opacity.toFixed(2)}`,
-    );
   }
+  s = await state(page);
+  const elapsed = (Date.now() - w0) / 1000;
+  check(!s.paused && Math.abs(s.t - t0 - elapsed) < 0.6, `${label}: scrolling does not pause or seek it (video moved ${(s.t - t0).toFixed(2)}s in ${elapsed.toFixed(2)}s)`);
+  await page.evaluate(() => scrollTo(0, 0));
+
+  // Through the 9s join to the end. Jump to just before the join and let it
+  // play across — the join must be continuous playback, not a stall.
+  await page.$eval("section video", (v) => (v.currentTime = 8.5));
+  await page.waitForFunction(() => document.querySelector("section video").currentTime > 9.4, null, { timeout: 5000 }).catch(() => {});
+  s = await state(page);
+  check(s.t > 9.4 && !s.paused && s.shown > 0.99, `${label}: plays across the 9s join into the second clip (t=${s.t.toFixed(2)})`);
+  await page.$eval("section video", (v) => (v.currentTime = 16.2));
+  await page.waitForTimeout(1200);
+  s = await state(page);
+  check(s.marker === stageOf(s.t), `${label}: chapter marker follows playback (t=${s.t.toFixed(2)}, chapter ${s.marker + 1})`);
+  await page.waitForFunction(() => document.querySelector("section video").ended, null, { timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(600);
+  s = await state(page);
+  check(s.ended && s.paused && s.t > 17.9 && s.shown > 0.99, `${label}: ends and holds the final frame (t=${s.t.toFixed(2)})`);
+  check(s.marker === 3, `${label}: ends on chapter 04 (${s.marker + 1})`);
+
+  check(videoRequests() >= 1 && (await page.evaluate(() => performance.getEntriesByType("resource").filter((e) => e.name.includes("pro-hero.mp4")).length)) <= 1, `${label}: video fetched by one element only`);
+  const cls = await page.evaluate(() => window.__cls);
+  check(cls < 0.1, `${label}: no layout shift (CLS ${cls.toFixed(4)})`);
   check(errors.length === 0, `${label}: no page errors${errors.length ? " — " + errors.join("; ") : ""}`);
   await browser.close();
 }
 
-async function fallbackRun() {
-  const { browser, page, errors } = await open(["--disable-webgl", "--disable-3d-apis"], {
-    width: 1440,
-    height: 900,
-  });
-  await page.goto(URL, { waitUntil: "networkidle" });
-  await page.waitForTimeout(6000);
-  check(!(await page.$("section canvas")), "no-WebGL: no canvas is mounted");
-  check(!(await page.$('[role="status"]')), "no-WebGL: no loading indicator left spinning");
-  check(!!(await page.$("section h1")), "no-WebGL: hero copy still renders over the poster");
-  check(errors.length === 0, `no-WebGL: no page errors${errors.length ? " — " + errors.join("; ") : ""}`);
-  await browser.close();
+async function widthRuns() {
+  for (const width of [320, 360, 375, 390, 414, 430, 1440]) {
+    const { browser, page, errors } = await open({ width, height: width < 768 ? 800 : 900 }, { hasTouch: width < 768 });
+    const ok = await playing(page);
+    const r = await page.evaluate(() => {
+      const cta = document.querySelector('section a[href="/services"]').getBoundingClientRect();
+      const v = document.querySelector("section video").getBoundingClientRect();
+      return { sw: document.documentElement.scrollWidth, cta: cta.right <= innerWidth && cta.bottom <= innerHeight, vw: v.width };
+    });
+    check(ok && r.sw <= width && r.cta && r.vw === width && errors.length === 0, `${width}px: plays, no overflow (scrollWidth ${r.sw}), video full width, CTAs on screen, ${errors.length} errors`);
+    await browser.close();
+  }
 }
 
-await sceneRun({ width: 1440, height: 900 }, "desktop");
-await sceneRun({ width: 390, height: 844 }, "mobile");
-await fallbackRun();
+async function fallbackRuns() {
+  // Autoplay refused (as a strict browser or Low Power Mode would).
+  {
+    const { browser, page, errors } = await open({ width: 390, height: 844 }, {}, () => {
+      const real = HTMLMediaElement.prototype.play;
+      HTMLMediaElement.prototype.play = function () {
+        if (!window.__tapped) return Promise.reject(new DOMException("blocked", "NotAllowedError"));
+        return real.call(this);
+      };
+      addEventListener("pointerdown", () => (window.__tapped = true), true);
+    });
+    await page.waitForTimeout(1500);
+    let s = await state(page);
+    check(s.button && s.paused && s.t === 0, "autoplay blocked: play button shown over the poster");
+    await page.click('button[aria-label="Play hero video"]');
+    check(await playing(page), "autoplay blocked: tapping play starts the video");
+    s = await state(page);
+    check(!s.button, "autoplay blocked: play button gone once playing");
+    check(errors.length === 0, `autoplay blocked: no page errors${errors.length ? " — " + errors.join("; ") : ""}`);
+    await browser.close();
+  }
+  // Reduced motion: nothing moves, nothing downloads, until asked.
+  {
+    const { browser, page, errors, videoRequests } = await open({ width: 1440, height: 900 }, { reducedMotion: "reduce" });
+    await page.waitForTimeout(1500);
+    const s = await state(page);
+    check(s.paused && s.button, "reduced motion: no autoplay, play button offered");
+    check(videoRequests() === 0, `reduced motion: video not downloaded (${videoRequests()} requests)`);
+    check(errors.length === 0, `reduced motion: no page errors${errors.length ? " — " + errors.join("; ") : ""}`);
+    await browser.close();
+  }
+  // Video fails to load.
+  {
+    const browser = await chromium.launch({ executablePath: CHROME, headless: true });
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    const errors = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.route("**/pro-hero.mp4", (r) => r.abort());
+    await page.goto(URL, { waitUntil: "load" });
+    await page.waitForTimeout(1500);
+    const r = await page.evaluate(() => ({
+      video: +getComputedStyle(document.querySelector("section video")).opacity,
+      poster: document.querySelector("section img").naturalWidth > 0,
+    }));
+    check(r.video === 0 && r.poster, "no video: poster stays, video layer hidden");
+    check(errors.length === 0, `no video: no page errors${errors.length ? " — " + errors.join("; ") : ""}`);
+    await browser.close();
+  }
+}
+
+await widthRuns();
+await autoplayRun({ width: 1440, height: 900 }, "desktop");
+await autoplayRun({ width: 390, height: 844 }, "mobile");
+await fallbackRuns();
 console.log(failures.length ? `\n${failures.length} check(s) failed` : "\nall hero checks passed");
 process.exit(failures.length ? 1 : 0);
